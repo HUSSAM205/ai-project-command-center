@@ -1,0 +1,135 @@
+import { type HTMLAttributes } from "react";
+import { cn } from "@/lib/utils";
+
+export type SemanticTone = "success" | "warning" | "high" | "critical" | "info" | "neutral";
+
+export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
+  tone?: SemanticTone;
+  dot?: boolean;
+}
+
+const toneClasses: Record<SemanticTone, string> = {
+  success: "bg-success-bg text-success-fg border-success-border",
+  warning: "bg-warning-bg text-warning-fg border-warning-border",
+  high: "bg-high-bg text-high-fg border-high-border",
+  critical: "bg-critical-bg text-critical-fg border-critical-border",
+  info: "bg-info-bg text-info-fg border-info-border",
+  neutral: "bg-subtle text-text-secondary border-border-default",
+};
+
+const dotClasses: Record<SemanticTone, string> = {
+  success: "bg-success-solid",
+  warning: "bg-warning-solid",
+  high: "bg-high-solid",
+  critical: "bg-critical-solid",
+  info: "bg-info-solid",
+  neutral: "bg-text-tertiary",
+};
+
+/** Raw CSS-variable solid colors per semantic tone, for contexts that can't use Tailwind classes
+ * (e.g. recharts `fill`/`stroke` props). Combine with a `*Tone` helper below to get a consistent
+ * color for a given status/severity everywhere it's charted. */
+export const SOLID_COLORS: Record<SemanticTone, string> = {
+  success: "var(--success-solid)",
+  warning: "var(--warning-solid)",
+  high: "var(--high-solid)",
+  critical: "var(--critical-solid)",
+  info: "var(--info-solid)",
+  neutral: "var(--neutral-400)",
+};
+
+export function Badge({ tone = "neutral", dot, className, children, ...props }: BadgeProps) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 whitespace-nowrap",
+        toneClasses[tone],
+        className,
+      )}
+      {...props}
+    >
+      {dot && <span className={cn("h-1.5 w-1.5 rounded-full", dotClasses[tone])} aria-hidden="true" />}
+      {children}
+    </span>
+  );
+}
+
+// Semantic mapping helpers so every page uses the same tone logic (spec: consistent semantic color use)
+export function riskLevelTone(level: string): SemanticTone {
+  switch (level) {
+    case "LOW":
+      return "success";
+    case "MEDIUM":
+      return "warning";
+    case "HIGH":
+      return "high";
+    case "CRITICAL":
+      return "critical";
+    default:
+      return "neutral";
+  }
+}
+
+export function priorityTone(priority: string): SemanticTone {
+  switch (priority) {
+    case "LOW":
+      return "neutral";
+    case "MEDIUM":
+      return "info";
+    case "HIGH":
+      return "warning";
+    case "CRITICAL":
+      return "critical";
+    default:
+      return "neutral";
+  }
+}
+
+export function projectStatusTone(status: string): SemanticTone {
+  switch (status) {
+    case "PLANNING":
+      return "neutral";
+    case "ACTIVE":
+      return "info";
+    case "ON_HOLD":
+      return "warning";
+    case "AT_RISK":
+      return "critical";
+    case "COMPLETED":
+      return "success";
+    case "CANCELLED":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
+export function taskStatusTone(status: string): SemanticTone {
+  switch (status) {
+    case "TODO":
+      return "neutral";
+    case "IN_PROGRESS":
+      return "info";
+    case "BLOCKED":
+      return "critical";
+    case "REVIEW":
+      return "warning";
+    case "DONE":
+      return "success";
+    default:
+      return "neutral";
+  }
+}
+
+export function utilizationTone(state: string): SemanticTone {
+  switch (state) {
+    case "UNDERUTILIZED":
+      return "info";
+    case "OPTIMAL":
+      return "success";
+    case "OVERLOADED":
+      return "critical";
+    default:
+      return "neutral";
+  }
+}
