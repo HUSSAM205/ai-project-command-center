@@ -13,6 +13,7 @@ import {
   FileText,
   BarChart3,
   ClipboardList,
+  Sparkles,
   LogOut,
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
@@ -27,9 +28,9 @@ import { initials } from "@/lib/utils";
 
 // Primary sidebar nav, top to bottom. Append one line per shipped page — do not restructure this
 // component or Sidebar.tsx to add an item. Per docs/PROJECT_PLAN.md's "no dead links" rule, only
-// add an entry once the page it points to actually exists and works (AI Assistant and Consulting
-// are upcoming and must NOT get an entry yet). When you do add a page, also register it in
-// lib/commands.ts so it's reachable from the Cmd+K command bar.
+// add an entry once the page it points to actually exists and works (Consulting is upcoming and
+// must NOT get an entry yet). When you do add a page, also register it in lib/commands.ts so
+// it's reachable from the Cmd+K command bar.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/app/dashboard", icon: <LayoutDashboard /> },
   { label: "Projects", href: "/app/projects", icon: <FolderKanban /> },
@@ -37,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Resources", href: "/app/resources", icon: <Users /> },
   { label: "Risks", href: "/app/risks", icon: <ShieldAlert /> },
   { label: "Budget", href: "/app/budget", icon: <Wallet /> },
+  { label: "AI Assistant", href: "/app/ai-assistant", icon: <Sparkles /> },
   { label: "Documents", href: "/app/documents", icon: <FileText /> },
   { label: "Analytics", href: "/app/analytics", icon: <BarChart3 /> },
   { label: "Reports", href: "/app/reports", icon: <ClipboardList /> },

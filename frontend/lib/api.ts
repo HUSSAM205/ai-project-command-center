@@ -209,6 +209,12 @@ export const api = {
   analytics: () => request<AnalyticsSummary>("/analytics"),
   report: (reportType: ReportType, projectId?: string) =>
     request<Report>(`/reports/${reportType}${projectId ? `?project_id=${projectId}` : ""}`),
+
+  // AI Assistant / Executive Brief (Phase 2)
+  executiveBrief: () => request<AIResponse>("/ai/executive-brief"),
+  projectAiInsights: (projectId: string) => request<AIResponse>(`/projects/${projectId}/ai-insights`),
+  askAssistant: (question: string, projectId?: string) =>
+    request<AIResponse>("/ai/assistant", { method: "POST", body: { question, project_id: projectId } }),
 };
 
 /** Multipart upload can't go through `request()` (it JSON-stringifies every body and forces

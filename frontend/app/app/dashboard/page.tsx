@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Calendar } from "lucide-react";
+import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Calendar, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useDashboardStream } from "@/lib/useDashboardStream";
@@ -28,7 +28,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
-import { Badge, riskLevelTone, projectStatusTone, utilizationTone, SOLID_COLORS } from "@/components/ui/Badge";
+import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, SOLID_COLORS } from "@/components/ui/Badge";
 import { formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
 import { cardHover, staggerContainer, staggerItem } from "@/lib/motion";
 
@@ -52,6 +52,7 @@ export default function DashboardPage() {
   const dashboard = useDashboardStream();
   const projects = useApi(() => api.projects(), []);
   const resources = useApi(() => api.resources(), []);
+  const brief = useApi(() => api.executiveBrief(), []);
 
   const worstHealthProjects = useMemo(() => {
     if (!projects.data) return [];
@@ -148,6 +149,35 @@ export default function DashboardPage() {
           />
         </motion.div>
       </motion.div>
+
+      {/* Executive AI Brief — Demo AI mode by default (no live provider keys configured); the
+          badge always reflects the real source, never implies a live model ran when it didn't. */}
+      <MotionCard>
+        <CardHeader>
+          <div>
+            <CardTitle className="flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-text-tertiary" aria-hidden="true" />
+              Executive Brief
+            </CardTitle>
+            <CardDescription>AI-generated portfolio summary, grounded in your actual data</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            {brief.data && <AISourceBadge source={brief.data.source} />}
+            <Link href="/app/ai-assistant" className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
+              Ask a question
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {brief.loading && <div className="h-16 animate-pulse rounded-md bg-subtle" />}
+          {brief.error && (
+            <ErrorState description={brief.error.message} offline={brief.error.message?.includes("offline")} onRetry={brief.reload} />
+          )}
+          {brief.data && (
+            <p className="whitespace-pre-line text-sm leading-relaxed text-text-secondary">{brief.data.detail ?? brief.data.summary}</p>
+          )}
+        </CardContent>
+      </MotionCard>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Portfolio health */}

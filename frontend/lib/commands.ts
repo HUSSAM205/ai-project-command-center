@@ -9,6 +9,7 @@ import {
   FileText,
   BarChart3,
   ClipboardList,
+  Sparkles,
 } from "lucide-react";
 
 /** Any lucide-react icon (or compatible component) — kept narrow so this file stays a plain
@@ -58,4 +59,5 @@ export const commands: Command[] = [
   { id: "nav-documents", label: "Documents", href: "/app/documents", group: "Navigate", icon: FileText, keywords: ["upload", "rag", "files"] },
   { id: "nav-analytics", label: "Analytics", href: "/app/analytics", group: "Navigate", icon: BarChart3, keywords: ["trends", "charts"] },
   { id: "nav-reports", label: "Reports", href: "/app/reports", group: "Navigate", icon: ClipboardList, keywords: ["status", "executive summary"] },
+  { id: "nav-ai-assistant", label: "AI Assistant", href: "/app/ai-assistant", group: "Navigate", icon: Sparkles, keywords: ["ask", "chat", "executive brief"] },
 ];
