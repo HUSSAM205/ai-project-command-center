@@ -73,3 +73,10 @@ class RiskStatus(str, enum.Enum):
     OPEN = "OPEN"
     MITIGATING = "MITIGATING"
     CLOSED = "CLOSED"
+
+
+class DocumentStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    FAILED = "FAILED"

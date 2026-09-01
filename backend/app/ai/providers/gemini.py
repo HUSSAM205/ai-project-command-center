@@ -12,6 +12,7 @@ from app.ai.exceptions import AIProviderError, AIProviderUnavailable
 from app.ai.prompts import (
     assistant_qa,
     document_analysis,
+    document_qa,
     executive_summary,
     project_health,
     risk_analysis,
@@ -87,3 +88,6 @@ class GeminiProvider(AIProvider):
 
     def answer_project_question(self, context: dict) -> AIResponse:
         return self._respond(context, assistant_qa)
+
+    def answer_document_question(self, context: dict) -> AIResponse:
+        return self._respond(context, document_qa)

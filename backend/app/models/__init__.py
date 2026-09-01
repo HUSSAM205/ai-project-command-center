@@ -1,5 +1,6 @@
 from app.models.ai_request import AIRequest
 from app.models.budget import Budget, BudgetTransaction
+from app.models.document import Document, DocumentChunk
 from app.models.milestone import Milestone
 from app.models.organization import Organization
 from app.models.project import Project, ProjectMember
@@ -22,4 +23,6 @@ __all__ = [
     "Budget",
     "BudgetTransaction",
     "AIRequest",
+    "Document",
+    "DocumentChunk",
 ]

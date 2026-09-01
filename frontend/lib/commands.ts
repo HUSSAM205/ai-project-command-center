@@ -1,5 +1,15 @@
 import type { ComponentType } from "react";
-import { LayoutDashboard, FolderKanban, ListChecks, Users, ShieldAlert, Wallet } from "lucide-react";
+import {
+  LayoutDashboard,
+  FolderKanban,
+  ListChecks,
+  Users,
+  ShieldAlert,
+  Wallet,
+  FileText,
+  BarChart3,
+  ClipboardList,
+} from "lucide-react";
 
 /** Any lucide-react icon (or compatible component) — kept narrow so this file stays a plain
  * data module (no JSX) and doesn't need a .tsx extension. */
@@ -45,4 +55,7 @@ export const commands: Command[] = [
   { id: "nav-resources", label: "Resources", href: "/app/resources", group: "Navigate", icon: Users, keywords: ["team", "people", "allocation"] },
   { id: "nav-risks", label: "Risks", href: "/app/risks", group: "Navigate", icon: ShieldAlert, keywords: ["risk matrix"] },
   { id: "nav-budget", label: "Budget", href: "/app/budget", group: "Navigate", icon: Wallet, keywords: ["cost", "spend", "forecast"] },
+  { id: "nav-documents", label: "Documents", href: "/app/documents", group: "Navigate", icon: FileText, keywords: ["upload", "rag", "files"] },
+  { id: "nav-analytics", label: "Analytics", href: "/app/analytics", group: "Navigate", icon: BarChart3, keywords: ["trends", "charts"] },
+  { id: "nav-reports", label: "Reports", href: "/app/reports", group: "Navigate", icon: ClipboardList, keywords: ["status", "executive summary"] },
 ];

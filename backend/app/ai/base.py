@@ -48,3 +48,11 @@ class AIProvider(ABC):
     @abstractmethod
     def answer_project_question(self, context: dict) -> AIResponse:
         """context: app.ai.context.build_assistant_context(...) shape."""
+
+    @abstractmethod
+    def answer_document_question(self, context: dict) -> AIResponse:
+        """Grounded document Q&A (Phase 3 RAG). context: {"question": str, "filename": str,
+        "chunks": [{"chunk_index": int, "page_number": int | None, "content": str,
+        "similarity": float}, ...]} — chunks are the top-k pgvector retrieval results for the
+        question, most similar first. Implementations must ground the answer in `chunks` and
+        cite which chunk_index/page it came from — never answer from outside knowledge."""

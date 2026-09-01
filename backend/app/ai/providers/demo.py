@@ -12,8 +12,17 @@ AIRouter, so it is unconditionally available and must never raise.
 """
 
 from app.ai.base import AIProvider
-from app.ai.prompts import assistant_qa, document_analysis, executive_summary, project_health, risk_analysis, summarize
+from app.ai.prompts import (
+    assistant_qa,
+    document_analysis,
+    document_qa,
+    executive_summary,
+    project_health,
+    risk_analysis,
+    summarize,
+)
 from app.schemas.ai import AIResponse
+from app.services.document_extraction import extract_structured_document_info
 
 DEMO_CONFIDENCE = 0.7
 
@@ -234,18 +243,101 @@ class DemoAIProvider(AIProvider):
     def analyze_document(self, context: dict) -> AIResponse:
         filename = context.get("filename", "document")
         text = context.get("text", "") or ""
-        word_count = len(text.split())
-        summary = f"{filename}: {word_count} words." if text else f"{filename}: no extractable text provided."
+        if not text.strip():
+            return AIResponse(
+                summary=f"{filename}: no extractable text found.",
+                confidence=0.3,
+                source="demo_ai",
+                detail="The document contained no extractable text, so no structured analysis could be produced.",
+                data={"filename": filename, "word_count": 0},
+                prompt_version=document_analysis.PROMPT_VERSION,
+            )
+
+        info = extract_structured_document_info(text)
+        parts = [f"{info['word_count']} words, {info['sentence_count']} sentences."]
+        parts.append(
+            f"Found {len(info['requirements'])} requirement(s), {len(info['deliverables'])} deliverable(s), "
+            f"{len(info['important_dates'])} date(s), {len(info['risks'])} risk mention(s), "
+            f"{len(info['action_items'])} action item(s)."
+        )
+        summary = f"{filename}: {parts[1]}"
+
+        detail_lines = [f"DOCUMENT: {filename}  -  {parts[0]}"]
+
+        def _section(title: str, items: list[str]) -> None:
+            if items:
+                detail_lines.append(f"{title}:")
+                detail_lines.extend(f"  - {item}" for item in items)
+            else:
+                detail_lines.append(f"{title}: none found.")
+
+        _section("REQUIREMENTS", info["requirements"])
+        _section("DELIVERABLES", info["deliverables"])
+        _section("IMPORTANT DATES", [f"{d['date']} ({d['context']})" for d in info["important_dates"]])
+        _section("RISKS", info["risks"])
+        _section("ACTION ITEMS", info["action_items"])
+        _section("MISSING INFORMATION", info["missing_information"])
+
         return AIResponse(
             summary=summary,
-            confidence=0.5,
+            confidence=0.65,
             source="demo_ai",
-            detail=(
-                "Demo AI document analysis reports basic structure only (word count) pending the "
-                f"Document Intelligence phase (see docs/ARCHITECTURE.md 'Not yet built'). {word_count} words in {filename}."
-            ),
-            data={"filename": filename, "word_count": word_count},
+            detail="\n".join(detail_lines),
+            data={"filename": filename, **info},
             prompt_version=document_analysis.PROMPT_VERSION,
+        )
+
+    def answer_document_question(self, context: dict) -> AIResponse:
+        question = context["question"]
+        filename = context.get("filename", "document")
+        chunks = context.get("chunks") or []
+
+        if not chunks:
+            summary = "No relevant content was found in this document for that question."
+            return AIResponse(
+                summary=summary,
+                confidence=0.3,
+                source="demo_ai",
+                detail=summary,
+                data={"citations": []},
+                prompt_version=document_qa.PROMPT_VERSION,
+            )
+
+        top = chunks[0]
+        citations = [
+            {
+                "chunk_index": c["chunk_index"],
+                "page_number": c.get("page_number"),
+                "similarity": round(c["similarity"], 3),
+                "excerpt": c["content"],
+            }
+            for c in chunks[:3]
+        ]
+
+        location = f"chunk {top['chunk_index']}" + (f", page {top['page_number']}" if top.get("page_number") else "")
+        excerpt = top["content"].strip()
+        excerpt_preview = excerpt if len(excerpt) <= 400 else excerpt[:400].rsplit(" ", 1)[0] + "…"
+        summary = f'From {location} of "{filename}": {excerpt_preview}'
+
+        detail_lines = [
+            f'Question: "{question}"',
+            f"Demo AI mode has no live model to synthesize a free-text answer, so this returns the "
+            f"most relevant retrieved excerpt(s) verbatim, most similar first:",
+            "",
+        ]
+        for c in citations:
+            loc = f"chunk {c['chunk_index']}" + (f", page {c['page_number']}" if c["page_number"] else "")
+            detail_lines.append(f"[{loc}, similarity {c['similarity']}]")
+            detail_lines.append(c["excerpt"])
+            detail_lines.append("")
+
+        return AIResponse(
+            summary=summary,
+            confidence=round(min(0.4 + top["similarity"] * 0.5, 0.9), 2),
+            source="demo_ai",
+            detail="\n".join(detail_lines).strip(),
+            data={"citations": citations},
+            prompt_version=document_qa.PROMPT_VERSION,
         )
 
     def answer_project_question(self, context: dict) -> AIResponse:

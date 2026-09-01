@@ -1,5 +1,7 @@
 import { type HTMLAttributes } from "react";
+import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { AISource } from "@/lib/types";
 
 export type SemanticTone = "success" | "warning" | "high" | "critical" | "info" | "neutral";
 
@@ -116,6 +118,47 @@ export function taskStatusTone(status: string): SemanticTone {
       return "warning";
     case "DONE":
       return "success";
+    default:
+      return "neutral";
+  }
+}
+
+// AI response provenance (mirrors backend AIResponse.source — app/schemas/ai.py). Every
+// AI-touching surface must render this so the UI never implies a live model ran when Demo
+// AI mode actually produced the answer (no API keys configured is the default/common case).
+const AI_SOURCE_LABEL: Record<AISource, string> = {
+  demo_ai: "Demo AI",
+  cache: "AI (cached)",
+  gemini: "Gemini",
+  groq: "Groq",
+};
+
+export function aiSourceTone(source: AISource): SemanticTone {
+  return source === "demo_ai" ? "neutral" : "info";
+}
+
+/** Small badge labeling where an AI-touching response actually came from. Always shown
+ * alongside AI-generated content (document extraction, document Q&A, etc.) so Demo AI mode
+ * is never mistaken for a live model response. */
+export function AISourceBadge({ source, className }: { source: AISource; className?: string }) {
+  return (
+    <Badge tone={aiSourceTone(source)} className={className}>
+      <Sparkles className="h-3 w-3" aria-hidden="true" />
+      {AI_SOURCE_LABEL[source]}
+    </Badge>
+  );
+}
+
+export function documentStatusTone(status: string): SemanticTone {
+  switch (status) {
+    case "PENDING":
+      return "neutral";
+    case "PROCESSING":
+      return "info";
+    case "READY":
+      return "success";
+    case "FAILED":
+      return "critical";
     default:
       return "neutral";
   }

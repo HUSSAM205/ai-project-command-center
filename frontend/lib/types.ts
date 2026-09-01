@@ -32,6 +32,24 @@ export type RiskCategory =
 
 export type RiskStatus = "OPEN" | "MITIGATING" | "CLOSED";
 
+export type DocumentStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
+
+// Mirrors backend AIResponse (app/schemas/ai.py) — the canonical shape for every
+// AI-touching endpoint. `source` is always present and honest: "demo_ai" means no live
+// model ran (Demo AI mode), "cache" means a previously-cached live answer was served,
+// "gemini"/"groq" mean a live provider actually ran. The frontend must never claim a live
+// model ran when `source` says otherwise — always render the badge from this field.
+export type AISource = "gemini" | "groq" | "cache" | "demo_ai";
+
+export interface AIResponse {
+  summary: string;
+  confidence: number;
+  source: AISource;
+  detail: string | null;
+  data: Record<string, unknown>;
+  prompt_version: string | null;
+}
+
 export interface User {
   id: string;
   organization_id: string;
@@ -214,4 +232,105 @@ export interface DashboardSummary {
 export interface AuthResponse {
   access_token: string;
   user: User;
+}
+
+export interface Document {
+  id: string;
+  organization_id: string;
+  project_id: string | null;
+  filename: string;
+  file_type: string;
+  uploaded_by: string | null;
+  file_size_bytes: number;
+  status: DocumentStatus;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface DocumentDetail {
+  document: Document;
+  extraction: AIResponse | null;
+}
+
+export interface DocumentExtractionData {
+  filename?: string;
+  word_count?: number;
+  sentence_count?: number;
+  requirements?: string[];
+  deliverables?: string[];
+  important_dates?: { date: string; context: string }[];
+  risks?: string[];
+  action_items?: string[];
+  missing_information?: string[];
+}
+
+export interface DocumentCitation {
+  chunk_index: number;
+  page_number: number | null;
+  similarity: number;
+  excerpt: string;
+}
+
+// Analytics (Phase 6) — mirrors backend app/schemas/analytics.py.
+export interface BudgetBurnPoint {
+  date: string;
+  period_spend: number;
+  cumulative_spend: number;
+}
+
+export interface TaskCompletionPoint {
+  period: string;
+  period_end: string;
+  tasks_due_cumulative: number;
+  tasks_completed_cumulative: number;
+  completion_rate_pct: number;
+}
+
+export interface RiskSnapshot {
+  as_of: string;
+  severity_counts: Record<RiskLevel, number>;
+  status_counts: Record<RiskStatus, number>;
+  open_count: number;
+  closed_count: number;
+  note: string;
+}
+
+export interface AnalyticsSummary {
+  generated_at: string;
+  organization_name: string;
+  total_projects: number;
+  total_budget: number;
+  total_actual_cost: number;
+  budget_burn_trend: BudgetBurnPoint[];
+  task_completion_trend: TaskCompletionPoint[];
+  risk_snapshot: RiskSnapshot;
+}
+
+// Reports (Phase 6) — mirrors backend app/schemas/report.py.
+export type ReportType = "status" | "executive" | "risk" | "budget" | "ai_transformation" | "weekly";
+
+export const REPORT_TYPES: { value: ReportType; label: string; description: string }[] = [
+  { value: "status", label: "Status Report", description: "Current status, progress, and issues" },
+  { value: "executive", label: "Executive Summary", description: "High-level overview for leadership" },
+  { value: "risk", label: "Risk Report", description: "Risk register and mitigation posture" },
+  { value: "budget", label: "Budget Report", description: "Spend, forecast, and recent transactions" },
+  { value: "ai_transformation", label: "AI Transformation Report", description: "Real AI adoption/usage telemetry" },
+  { value: "weekly", label: "Weekly Report", description: "Activity over the last 7 days" },
+];
+
+export interface ReportSection {
+  heading: string;
+  body: string;
+  data?: Record<string, unknown> | null;
+}
+
+export interface Report {
+  report_type: ReportType;
+  title: string;
+  generated_at: string;
+  organization_name: string;
+  project_id: string | null;
+  project_name: string | null;
+  source: AISource;
+  sections: ReportSection[];
 }

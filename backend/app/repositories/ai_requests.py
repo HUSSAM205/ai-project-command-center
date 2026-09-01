@@ -1,8 +1,21 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.ai_request import AIRequest
+
+
+def list_ai_requests_for_org(db: Session, organization_id: UUID) -> list[AIRequest]:
+    """Org-scoped AI usage log, most recent first. Feeds the `ai_transformation` report
+    (real adoption/telemetry data — never fabricated) and, eventually, the Phase 5 admin
+    usage view mentioned in docs/TODO.md."""
+    stmt = (
+        select(AIRequest)
+        .where(AIRequest.organization_id == organization_id)
+        .order_by(AIRequest.created_at.desc())
+    )
+    return list(db.scalars(stmt).all())
 
 
 def log_ai_request(

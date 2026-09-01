@@ -1,13 +1,19 @@
 import type {
+  AIResponse,
+  AnalyticsSummary,
   AssigneeCandidate,
   AuthResponse,
   Budget,
   BudgetTransaction,
   CostForecast,
   DashboardSummary,
+  Document,
+  DocumentDetail,
   HealthBreakdown,
   Milestone,
   Project,
+  Report,
+  ReportType,
   Resource,
   ResourceAllocation,
   Risk,
@@ -190,4 +196,53 @@ export const api = {
     ),
   addBudgetTransaction: (projectId: string, payload: Partial<BudgetTransaction>) =>
     request<BudgetTransaction>(`/projects/${projectId}/budget/transactions`, { method: "POST", body: payload }),
+
+  // Documents (Phase 3 — Document Intelligence / RAG)
+  documents: (projectId?: string) =>
+    request<Document[]>(`/documents${projectId ? `?project_id=${projectId}` : ""}`),
+  document: (id: string) => request<DocumentDetail>(`/documents/${id}`),
+  uploadDocument: (file: File, projectId?: string) => uploadDocumentRequest(file, projectId),
+  askDocument: (id: string, question: string) =>
+    request<AIResponse>(`/documents/${id}/ask`, { method: "POST", body: { question } }),
+
+  // Analytics & Reports (Phase 6)
+  analytics: () => request<AnalyticsSummary>("/analytics"),
+  report: (reportType: ReportType, projectId?: string) =>
+    request<Report>(`/reports/${reportType}${projectId ? `?project_id=${projectId}` : ""}`),
 };
+
+/** Multipart upload can't go through `request()` (it JSON-stringifies every body and forces
+ * a `Content-Type: application/json` header, which would break the multipart boundary) —
+ * built separately but mirrors the same auth/error handling. */
+async function uploadDocumentRequest(file: File, projectId?: string): Promise<Document> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const form = new FormData();
+  form.append("file", file);
+  if (projectId) form.append("project_id", projectId);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/documents`, { method: "POST", headers, body: form });
+  } catch {
+    throw new ApiError("Could not reach the API. The backend may be offline.", 0);
+  }
+
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data?.detail || data?.message || message;
+    } catch {
+      // ignore body parse failure
+    }
+    if (res.status === 403) {
+      message = "This is a read-only demo session — write actions are disabled.";
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  return (await res.json()) as Document;
+}

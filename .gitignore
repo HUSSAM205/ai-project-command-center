@@ -29,3 +29,6 @@ npm-debug.log*
 
 # Docker
 .docker-volumes/
+
+# Uploaded documents (Phase 3 Document Intelligence) — local disk storage, never committed
+backend/uploads/
