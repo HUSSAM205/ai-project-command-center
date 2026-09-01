@@ -334,3 +334,80 @@ export interface Report {
   source: AISource;
   sections: ReportSection[];
 }
+
+// Admin panel (Phase 5) — mirrors backend app/schemas/admin.py.
+export interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  created_at: string;
+}
+
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  is_demo: boolean;
+  created_at: string;
+  user_count: number;
+  project_count: number;
+}
+
+export interface AIProviderStatus {
+  name: string;
+  configured: boolean;
+  available: boolean;
+  circuit_open: boolean;
+  consecutive_failures: number;
+  cooldown_seconds_remaining: number | null;
+}
+
+export interface AIUsageProviderBreakdown {
+  provider: string;
+  request_count: number;
+  success_rate: number;
+  avg_latency_ms: number;
+}
+
+export interface AIUsage {
+  window_hours: number;
+  since: string;
+  total_requests: number;
+  success_rate: number;
+  avg_latency_ms: number;
+  provider_breakdown: AIUsageProviderBreakdown[];
+}
+
+export interface AuditLogEntry {
+  id: string;
+  organization_id: string;
+  actor_user_id: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  event_metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AuditLogPage {
+  items: AuditLogEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface FeedbackEntry {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  message: string;
+  created_at: string;
+}
+
+export interface FeedbackPage {
+  items: FeedbackEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}

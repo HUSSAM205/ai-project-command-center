@@ -1,7 +1,12 @@
 import type {
+  AdminOrganization,
+  AdminUser,
+  AIProviderStatus,
   AIResponse,
+  AIUsage,
   AnalyticsSummary,
   AssigneeCandidate,
+  AuditLogPage,
   AuthResponse,
   Budget,
   BudgetTransaction,
@@ -9,6 +14,8 @@ import type {
   DashboardSummary,
   Document,
   DocumentDetail,
+  FeedbackEntry,
+  FeedbackPage,
   HealthBreakdown,
   Milestone,
   Project,
@@ -215,6 +222,32 @@ export const api = {
   projectAiInsights: (projectId: string) => request<AIResponse>(`/projects/${projectId}/ai-insights`),
   askAssistant: (question: string, projectId?: string) =>
     request<AIResponse>("/ai/assistant", { method: "POST", body: { question, project_id: projectId } }),
+
+  // Feedback (Phase 5) — open to any authenticated caller, including anonymous demo sessions.
+  submitFeedback: (message: string) => request<FeedbackEntry>("/feedback", { method: "POST", body: { message } }),
+
+  // Admin panel (Phase 5) — every call here 403s unless the caller's role has been granted the
+  // "admin.access" permission (see backend app/core/deps.py::require_permission).
+  admin: {
+    users: () => request<AdminUser[]>("/admin/users"),
+    organization: () => request<AdminOrganization>("/admin/organizations"),
+    aiProviders: () => request<AIProviderStatus[]>("/admin/ai-providers"),
+    aiUsage: (hours: number) => request<AIUsage>(`/admin/ai-usage?hours=${hours}`),
+    auditLogs: (params: { page?: number; pageSize?: number; action?: string; entityType?: string } = {}) => {
+      const q = new URLSearchParams();
+      q.set("page", String(params.page ?? 1));
+      q.set("page_size", String(params.pageSize ?? 25));
+      if (params.action) q.set("action", params.action);
+      if (params.entityType) q.set("entity_type", params.entityType);
+      return request<AuditLogPage>(`/admin/audit-logs?${q.toString()}`);
+    },
+    feedback: (params: { page?: number; pageSize?: number } = {}) => {
+      const q = new URLSearchParams();
+      q.set("page", String(params.page ?? 1));
+      q.set("page_size", String(params.pageSize ?? 25));
+      return request<FeedbackPage>(`/admin/feedback?${q.toString()}`);
+    },
+  },
 };
 
 /** Multipart upload can't go through `request()` (it JSON-stringifies every body and forces

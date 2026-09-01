@@ -1,11 +1,14 @@
 from app.models.ai_request import AIRequest
+from app.models.audit_log import AuditLog
 from app.models.budget import Budget, BudgetTransaction
 from app.models.document import Document, DocumentChunk
+from app.models.feedback import Feedback
 from app.models.milestone import Milestone
 from app.models.organization import Organization
 from app.models.project import Project, ProjectMember
 from app.models.resource import Resource, ResourceAllocation
 from app.models.risk import Risk
+from app.models.role import Permission, RolePermission
 from app.models.task import Task, TaskDependency
 from app.models.user import User
 
@@ -25,4 +28,8 @@ __all__ = [
     "AIRequest",
     "Document",
     "DocumentChunk",
+    "Permission",
+    "RolePermission",
+    "AuditLog",
+    "Feedback",
 ]

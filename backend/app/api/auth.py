@@ -11,6 +11,7 @@ from app.models.enums import UserRole
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.services.audit import log_audit_event
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -66,6 +67,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
     token = create_access_token(
         user_id=user.id, organization_id=user.organization_id, role=user.role.value, read_only=False
+    )
+    log_audit_event(
+        db,
+        organization_id=user.organization_id,
+        actor_user_id=user.id,
+        action="auth.login",
+        entity_type="user",
+        entity_id=user.id,
+        metadata={"email": user.email},
     )
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 

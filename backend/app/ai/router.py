@@ -160,6 +160,44 @@ class AIRouter:
         assert last_exc is not None
         raise last_exc
 
+    # ---- admin introspection (read-only; never mutates circuit state) ----
+
+    def provider_status(self) -> list[dict]:
+        """Snapshot of each provider's configured/availability/circuit-breaker state, for the
+        Phase 5 admin AI Providers view (GET /api/v1/admin/ai-providers). Deliberately doesn't
+        call `_circuit_available`, which intentionally *resets* the breaker once a cooldown has
+        elapsed as a side effect of a real dispatch attempt — an admin status read must never
+        change routing behavior."""
+        now = time.monotonic()
+        statuses: list[dict] = []
+        for provider in self._live_providers:
+            state = self._circuits[provider.name]
+            configured = provider.is_available()
+            circuit_open = state.opened_until is not None and now < state.opened_until
+            statuses.append(
+                {
+                    "name": provider.name,
+                    "configured": configured,
+                    "available": configured and not circuit_open,
+                    "circuit_open": circuit_open,
+                    "consecutive_failures": state.failures,
+                    "cooldown_seconds_remaining": round(state.opened_until - now, 1) if circuit_open else None,
+                }
+            )
+        # The demo provider is the unconditional final fallback (see module docstring) — no
+        # API key and no circuit breaker, so it is always configured and available.
+        statuses.append(
+            {
+                "name": self.demo.name,
+                "configured": True,
+                "available": True,
+                "circuit_open": False,
+                "consecutive_failures": 0,
+                "cooldown_seconds_remaining": None,
+            }
+        )
+        return statuses
+
     # ---- main entrypoint ----
 
     def dispatch(

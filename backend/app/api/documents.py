@@ -16,6 +16,7 @@ from app.repositories.documents import (
 from app.repositories.projects import get_project
 from app.schemas.ai import AIResponse
 from app.schemas.document import DocumentAskRequest, DocumentDetailOut, DocumentOut
+from app.services.audit import log_audit_event
 from app.services.document_parser import UnsupportedFileError, detect_file_type
 from app.services.document_pipeline import process_document
 from app.services.document_storage import save_upload
@@ -66,6 +67,16 @@ async def upload_document(
 
     background_tasks.add_task(process_document, document.id, document.filename, document.storage_path)
 
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="document.uploaded",
+        entity_type="document",
+        entity_id=document.id,
+        metadata={"filename": document.filename, "file_type": document.file_type, "size_bytes": len(data)},
+    )
+
     return DocumentOut.model_validate(document)
 
 
@@ -111,6 +122,15 @@ def get_document_detail(
             method_name="analyze_document",
             context={"filename": document.filename, "text": document.extracted_text or ""},
         )
+        log_audit_event(
+            db,
+            organization_id=principal.organization_id,
+            actor_user_id=principal.user_id,
+            action="ai.request",
+            entity_type="ai_request",
+            entity_id=document.id,
+            metadata={"endpoint": f"/api/v1/documents/{document_id}", "provider": extraction.source},
+        )
 
     return DocumentDetailOut(document=DocumentOut.model_validate(document), extraction=extraction)
 
@@ -150,10 +170,20 @@ def ask_document_question(
         for chunk, similarity in results
     ]
 
-    return ai_router.dispatch(
+    response = ai_router.dispatch(
         db,
         organization_id=principal.organization_id,
         endpoint=f"/api/v1/documents/{document_id}/ask",
         method_name="answer_document_question",
         context={"question": payload.question, "filename": document.filename, "chunks": chunks},
     )
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="ai.request",
+        entity_type="ai_request",
+        entity_id=document.id,
+        metadata={"endpoint": f"/api/v1/documents/{document_id}/ask", "provider": response.source},
+    )
+    return response

@@ -18,6 +18,7 @@ from app.schemas.task import (
     TaskOut,
     TaskUpdate,
 )
+from app.services.audit import log_audit_event
 from app.services.resource_state import compute_all_resource_states
 from app.services.resource_optimization import rank_candidates
 
@@ -55,6 +56,16 @@ def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
+    if task.assignee_id is not None:
+        log_audit_event(
+            db,
+            organization_id=principal.organization_id,
+            actor_user_id=principal.user_id,
+            action="task.assigned",
+            entity_type="task",
+            entity_id=task.id,
+            metadata={"assignee_id": str(task.assignee_id)},
+        )
     return task
 
 
@@ -75,10 +86,21 @@ def update_task(
     db: Session = Depends(get_db),
 ) -> Task:
     task = _get_task_or_404(db, principal.organization_id, task_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changed_fields = payload.model_dump(exclude_unset=True)
+    for field, value in changed_fields.items():
         setattr(task, field, value)
     db.commit()
     db.refresh(task)
+    if "assignee_id" in changed_fields:
+        log_audit_event(
+            db,
+            organization_id=principal.organization_id,
+            actor_user_id=principal.user_id,
+            action="task.assigned",
+            entity_type="task",
+            entity_id=task.id,
+            metadata={"assignee_id": str(task.assignee_id) if task.assignee_id else None},
+        )
     return task
 
 

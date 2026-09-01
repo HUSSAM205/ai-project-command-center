@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    admin,
     ai,
     analytics,
     auth,
@@ -9,6 +10,7 @@ from app.api import (
     dashboard,
     demo,
     documents,
+    feedback,
     milestones,
     projects,
     reports,
@@ -17,8 +19,11 @@ from app.api import (
     tasks,
 )
 from app.core.config import settings
+from app.core.middleware import SecurityHeadersMiddleware
 
 app = FastAPI(title="AI Project Command Center API", version="0.1.0")
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +47,8 @@ app.include_router(ai.router)
 app.include_router(analytics.router)
 app.include_router(reports.router)
 app.include_router(documents.router)
+app.include_router(admin.router)
+app.include_router(feedback.router)
 
 
 @app.get("/health")

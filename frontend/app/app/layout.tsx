@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Sparkles,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
@@ -115,6 +116,17 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
                   </span>
                 }
                 items={[
+                  // Admin is a separate top-level surface (not part of NAV_ITEMS above, per this
+                  // file's own comment) — this is just a shortcut into it for ADMIN-role users.
+                  ...(user?.role === "ADMIN"
+                    ? [
+                        {
+                          label: "Admin panel",
+                          icon: <ShieldCheck className="h-4 w-4" />,
+                          onSelect: () => router.push("/admin"),
+                        },
+                      ]
+                    : []),
                   {
                     label: "Sign out",
                     icon: <LogOut className="h-4 w-4" />,

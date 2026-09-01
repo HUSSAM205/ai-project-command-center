@@ -1,13 +1,16 @@
 from dataclasses import dataclass
+from typing import Callable
 from uuid import UUID
 
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
+from app.models.role import Permission, RolePermission
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -95,3 +98,42 @@ def require_write_access(
 
 def get_db_session(db: Session = Depends(get_db)) -> Session:
     return db
+
+
+def require_role(*roles: str) -> Callable[[CurrentPrincipal], CurrentPrincipal]:
+    """Guard for role-gated endpoints — e.g. `Depends(require_role("ADMIN"))`. Additive on top
+    of `get_current_principal`/`require_write_access`, not a replacement: this only checks the
+    caller's role, so pair it with `require_write_access` too on any mutating route that also
+    needs the existing demo-read-only behavior."""
+
+    def _dependency(principal: CurrentPrincipal = Depends(get_current_principal)) -> CurrentPrincipal:
+        if principal.role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient role")
+        return principal
+
+    return _dependency
+
+
+def require_permission(permission_key: str) -> Callable[[CurrentPrincipal, Session], CurrentPrincipal]:
+    """Guard backed by the `permissions`/`role_permissions` tables (see app/models/role.py):
+    the caller's role must actually have `permission_key` granted in the database, not just
+    match a hardcoded role name. Used today to gate the /admin/* surface
+    (`require_permission("admin.access")`); additive on top of `get_current_principal`, and the
+    seeded grants (see the Phase 5 migration) cover the rest of the permission catalog for
+    future wiring onto domain routers without needing another schema change.
+    """
+
+    def _dependency(
+        principal: CurrentPrincipal = Depends(get_current_principal),
+        db: Session = Depends(get_db),
+    ) -> CurrentPrincipal:
+        granted = db.scalar(
+            select(RolePermission.id)
+            .join(Permission, Permission.id == RolePermission.permission_id)
+            .where(RolePermission.role == principal.role, Permission.key == permission_key)
+        )
+        if granted is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permissions")
+        return principal
+
+    return _dependency

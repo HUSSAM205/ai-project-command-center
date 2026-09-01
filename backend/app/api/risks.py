@@ -10,6 +10,7 @@ from app.models.risk import Risk
 from app.repositories.projects import get_project
 from app.repositories.risks import get_risk, list_risks_for_project
 from app.schemas.risk import RiskCreate, RiskOut, RiskUpdate
+from app.services.audit import log_audit_event
 
 router = APIRouter(prefix="/api/v1", tags=["risks"])
 
@@ -39,6 +40,15 @@ def create_risk(
     db.add(risk)
     db.commit()
     db.refresh(risk)
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="risk.created",
+        entity_type="risk",
+        entity_id=risk.id,
+        metadata={"title": risk.title, "category": risk.category.value, "score": risk.probability * risk.impact},
+    )
     return serialize_risk(risk)
 
 

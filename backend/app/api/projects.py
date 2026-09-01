@@ -15,6 +15,7 @@ from app.repositories.tasks import list_tasks_for_project
 from app.models.project import Project
 from app.schemas.ai import AIResponse
 from app.schemas.project import CostForecastOut, HealthScoreOut, ProjectCreate, ProjectOut, ProjectUpdate
+from app.services.audit import log_audit_event
 from app.services.cost_forecast import compute_cost_forecast
 from app.services.health_score import compute_health_score
 from app.services.resource_state import compute_all_resource_states, count_overloaded_resources_for_project
@@ -56,6 +57,15 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="project.created",
+        entity_type="project",
+        entity_id=project.id,
+        metadata={"name": project.name, "status": project.status.value},
+    )
     return serialize_project(project, [], [], 0)
 
 
@@ -80,10 +90,20 @@ def update_project(
     db: Session = Depends(get_db),
 ) -> ProjectOut:
     project = _get_project_or_404(db, principal.organization_id, project_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changed_fields = payload.model_dump(exclude_unset=True)
+    for field, value in changed_fields.items():
         setattr(project, field, value)
     db.commit()
     db.refresh(project)
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="project.updated",
+        entity_type="project",
+        entity_id=project.id,
+        metadata={"fields": list(changed_fields.keys())},
+    )
     tasks = list_tasks_for_project(db, principal.organization_id, project_id)
     risks = list_risks_for_project(db, principal.organization_id, project_id)
     overloaded = count_overloaded_resources_for_project(db, principal.organization_id, project_id)
@@ -166,10 +186,20 @@ def get_project_ai_insights(
         scope_key=f"{principal.organization_id}:{principal.user_id}", read_only=principal.read_only
     )
     context = build_project_context(db, principal.organization_id, project)
-    return ai_router.dispatch(
+    response = ai_router.dispatch(
         db,
         organization_id=principal.organization_id,
         endpoint=f"/api/v1/projects/{project_id}/ai-insights",
         method_name="analyze_project",
         context=context,
     )
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="ai.request",
+        entity_type="ai_request",
+        entity_id=project.id,
+        metadata={"endpoint": f"/api/v1/projects/{project_id}/ai-insights", "provider": response.source},
+    )
+    return response

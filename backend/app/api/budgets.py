@@ -9,6 +9,7 @@ from app.models.budget import Budget, BudgetTransaction
 from app.repositories.budgets import get_budget, list_transactions
 from app.repositories.projects import get_project
 from app.schemas.budget import BudgetOut, BudgetSummary, BudgetTransactionCreate, BudgetTransactionOut
+from app.services.audit import log_audit_event
 
 router = APIRouter(prefix="/api/v1/projects", tags=["budget"])
 
@@ -73,4 +74,17 @@ def create_budget_transaction(
 
     db.commit()
     db.refresh(transaction)
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="budget.transaction_created",
+        entity_type="budget_transaction",
+        entity_id=transaction.id,
+        metadata={
+            "project_id": str(project_id),
+            "amount": str(transaction.amount),
+            "category": transaction.category,
+        },
+    )
     return transaction

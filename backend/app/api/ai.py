@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.deps import CurrentPrincipal, get_current_principal
 from app.repositories.projects import get_project
 from app.schemas.ai import AIResponse, AssistantRequest
+from app.services.audit import log_audit_event
 
 router = APIRouter(prefix="/api/v1/ai", tags=["ai"])
 
@@ -25,13 +26,22 @@ def get_executive_brief(
     not a mutation) — subject to the tighter anonymous rate limit."""
     ai_router.enforce_rate_limit(scope_key=_scope_key(principal), read_only=principal.read_only)
     context = build_portfolio_context(db, principal.organization_id)
-    return ai_router.dispatch(
+    response = ai_router.dispatch(
         db,
         organization_id=principal.organization_id,
         endpoint="/api/v1/ai/executive-brief",
         method_name="generate_report",
         context=context,
     )
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="ai.request",
+        entity_type="ai_request",
+        metadata={"endpoint": "/api/v1/ai/executive-brief", "provider": response.source},
+    )
+    return response
 
 
 @router.post("/assistant", response_model=AIResponse)
@@ -53,10 +63,20 @@ def ask_assistant(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
     context = build_assistant_context(db, principal.organization_id, payload.question, project)
-    return ai_router.dispatch(
+    response = ai_router.dispatch(
         db,
         organization_id=principal.organization_id,
         endpoint="/api/v1/ai/assistant",
         method_name="answer_project_question",
         context=context,
     )
+    log_audit_event(
+        db,
+        organization_id=principal.organization_id,
+        actor_user_id=principal.user_id,
+        action="ai.request",
+        entity_type="ai_request",
+        entity_id=project.id if project else None,
+        metadata={"endpoint": "/api/v1/ai/assistant", "provider": response.source},
+    )
+    return response
