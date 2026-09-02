@@ -62,6 +62,13 @@ automatically).
   to a file or committed, but it did pass through conversation history.
 - The demo passwords above are intentionally simple/public — this is the point of a public demo
   org; don't reuse this password pattern for any real account.
+- **Render's free plan spins the service down after ~15 minutes of no traffic.** The first
+  request after a quiet period takes ~30-60s to respond (cold start) while it spins back up —
+  this is expected free-tier behavior, not a bug. A paid Render plan removes this; not done here
+  since it costs money and wasn't asked for.
+- **Confirmed post-deployment**: a routine doc-only commit auto-triggered a Render redeploy
+  (`autoDeploy: yes`) and it went `live` cleanly on the first try — the pipeline itself is stable,
+  not a one-off fluke from the initial manual fix.
 
 ## Verification performed (not just claimed)
 
