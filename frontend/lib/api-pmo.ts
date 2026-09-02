@@ -25,6 +25,12 @@ interface RequestOptions {
   body?: unknown;
 }
 
+// Mirrors api.ts's GATEWAY_RETRY behavior exactly (see that file for the full explanation): the
+// free-tier backend sleeps when idle, and Render's edge can briefly answer with a 502/503/504
+// while it wakes back up. Retrying a GET a few times resolves this invisibly.
+const GATEWAY_RETRY_STATUSES = new Set([502, 503, 504]);
+const GATEWAY_RETRY_DELAYS_MS = [800, 1600, 2800];
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body } = options;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -32,14 +38,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let res: Response;
-  try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError("Could not reach the API. The backend may be offline.", 0);
+  let attempt = 0;
+  for (;;) {
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw new ApiError("Could not reach the API. The backend may be offline.", 0);
+    }
+    const canRetry = method === "GET" && GATEWAY_RETRY_STATUSES.has(res.status) && attempt < GATEWAY_RETRY_DELAYS_MS.length;
+    if (!canRetry) break;
+    await new Promise((resolve) => setTimeout(resolve, GATEWAY_RETRY_DELAYS_MS[attempt]));
+    attempt += 1;
   }
 
   if (!res.ok) {
@@ -52,6 +65,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     if (res.status === 403) {
       message = "This view is read-only. Get full account access to make changes.";
+    }
+    if (GATEWAY_RETRY_STATUSES.has(res.status)) {
+      message = "The backend is warming up after being idle — please try again in a few seconds.";
     }
     throw new ApiError(message, res.status);
   }

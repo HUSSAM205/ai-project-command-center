@@ -75,6 +75,15 @@ interface RequestOptions {
   auth?: boolean;
 }
 
+// Render's free-tier backend sleeps after ~15 minutes with no traffic; waking it up can briefly
+// surface as a 502/503/504 from Render's own edge (not the application) while the container spins
+// back up. Retrying a GET a few times with backoff resolves this invisibly instead of showing an
+// error for what is, from the user's perspective, nothing having gone wrong. Never retries
+// mutating requests (POST/PATCH/PUT/DELETE) — those get one honest attempt, since a transient
+// gateway error on a write is surfaced to the user rather than silently reissued.
+const GATEWAY_RETRY_STATUSES = new Set([502, 503, 504]);
+const GATEWAY_RETRY_DELAYS_MS = [800, 1600, 2800];
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal, auth = true } = options;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -85,18 +94,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   let res: Response;
-  try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal,
-    });
-  } catch {
-    throw new ApiError(
-      "Could not reach the API. The backend may be offline.",
-      0,
-    );
+  let attempt = 0;
+  for (;;) {
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
+      });
+    } catch {
+      throw new ApiError(
+        "Could not reach the API. The backend may be offline.",
+        0,
+      );
+    }
+    const canRetry = method === "GET" && GATEWAY_RETRY_STATUSES.has(res.status) && attempt < GATEWAY_RETRY_DELAYS_MS.length;
+    if (!canRetry) break;
+    await new Promise((resolve) => setTimeout(resolve, GATEWAY_RETRY_DELAYS_MS[attempt]));
+    attempt += 1;
   }
 
   if (!res.ok) {
@@ -109,6 +125,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     if (res.status === 403) {
       message = "This view is read-only. Get full account access to make changes.";
+    }
+    if (GATEWAY_RETRY_STATUSES.has(res.status)) {
+      message = "The backend is warming up after being idle — please try again in a few seconds.";
     }
     throw new ApiError(message, res.status);
   }

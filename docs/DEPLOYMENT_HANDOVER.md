@@ -62,10 +62,15 @@ automatically).
   to a file or committed, but it did pass through conversation history.
 - The demo passwords above are intentionally simple/public — this is the point of a public demo
   org; don't reuse this password pattern for any real account.
-- **Render's free plan spins the service down after ~15 minutes of no traffic.** The first
-  request after a quiet period takes ~30-60s to respond (cold start) while it spins back up —
-  this is expected free-tier behavior, not a bug. A paid Render plan removes this; not done here
-  since it costs money and wasn't asked for.
+- **Render's free plan spins the service down after ~15 minutes of no traffic.** Observed directly
+  during this build: a health check after an idle period got a `502` straight from Render's own
+  edge (`x-render-routing: no-deploy` header — not an application error) while the container spun
+  back up; a follow-up request a short time later succeeded normally. This is expected free-tier
+  behavior, not a bug — a paid Render plan removes it, not done here since it costs money and
+  wasn't asked for. **Mitigated in the frontend** (`frontend/lib/api.ts`/`api-pmo.ts`): GET
+  requests automatically retry up to 3 times with backoff on a 502/503/504 before surfacing an
+  error, so a visitor arriving during this window sees a normal (if slightly slower) load instead
+  of an error page in most cases. Mutating requests are never auto-retried.
 - **Confirmed post-deployment**: a routine doc-only commit auto-triggered a Render redeploy
   (`autoDeploy: yes`) and it went `live` cleanly on the first try — the pipeline itself is stable,
   not a one-off fluke from the initial manual fix.
