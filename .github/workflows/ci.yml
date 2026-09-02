@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector/pgvector:pg16 — same image as docker-compose.yml (Phase 3 Document
+        # Intelligence needs `CREATE EXTENSION vector`, which the Alembic migrations issue).
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: apppass
+          POSTGRES_DB: aipcc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U appuser -d aipcc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Points at the ephemeral service-container Postgres/Redis above. The test suite itself
+      # (backend/tests/conftest.py) creates and migrates its own separate "aipcc_test" database
+      # on this same server before running any test — it never touches the "aipcc" database
+      # migrated below, matching the "never run tests against the dev DB" rule documented there.
+      DATABASE_URL: postgresql+psycopg://appuser:apppass@localhost:5432/aipcc
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-test-secret-not-used-in-production-0123456789abcdef
+      JWT_EXPIRES_MINUTES: "1440"
+      ENVIRONMENT: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run Alembic migrations (aipcc dev schema)
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Run pytest suite
+        working-directory: backend
+        run: pytest -v --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend (lint, typecheck, build)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+        run: npm run build

@@ -5,6 +5,9 @@ backend/__pycache__/
 *.pyc
 backend/.pytest_cache/
 backend/alembic/versions/__pycache__/
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
 
 # Node / Next.js
 frontend/node_modules/

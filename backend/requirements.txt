@@ -19,3 +19,8 @@ pgvector==0.5.0
 pypdf==6.16.2
 python-docx==1.2.0
 sentence-transformers==6.0.1
+
+# --- Test Suite (Phase 7) ---
+pytest==8.3.4
+pytest-cov==6.0.0
+respx==0.22.0

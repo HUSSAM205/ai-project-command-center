@@ -9,49 +9,47 @@ acceptance criteria this list is derived from.
   budgets CRUD, deterministic health score / cost forecast / resource optimization, executive
   dashboard with live SSE metrics, Gantt/Kanban/risk-matrix/budget views, public read-only Demo
   Mode, seeded "Vertex Technologies" demo org.
-- **App shell polish**: Linear/Vercel-grade density, hairline borders, Cmd+K command bar
-  (extensible registry — see `frontend/lib/commands.ts` and `NAV_ITEMS` in
-  `frontend/app/app/layout.tsx` for how to add entries), Framer Motion micro-interactions,
-  landing-page bento grid.
-- **Phase 2 — AI engineering layer (core)**: `AIProvider`/`GeminiProvider`/`GroqProvider`/
-  `AIRouter` (circuit breaker, timeout/retry, Redis cache, rate limiting), Demo AI mode (fully
-  real, data-driven — not a stub) so `/api/v1/ai/executive-brief`, `/api/v1/projects/{id}/
-  ai-insights`, and `/api/v1/ai/assistant` all work today with **no API keys required**.
+- **App shell**: Linear/Vercel-grade density, hairline borders, Cmd+K command bar, Framer Motion
+  micro-interactions, landing-page bento grid.
+- **Phase 2 — AI engineering layer**: `AIProvider`/`GeminiProvider`/`GroqProvider`/`AIRouter`
+  (circuit breaker, timeout/retry, Redis cache, rate limiting), Demo AI mode (fully real,
+  data-driven), Executive Brief dashboard widget, `/app/ai-assistant` chat UI. Live Gemini/Groq
+  calls are dormant pending rotated API keys (see below) but architecturally complete.
+- **Phase 3 — Document intelligence & RAG**: upload pipeline (PDF/DOCX/TXT), local
+  `sentence-transformers` embeddings + `pgvector`, structured extraction, grounded Q&A with
+  citations, `/app/documents`.
+- **Phase 4 — AI Consulting Workspace**: `/app/consulting` — business case intake, 6-dimension
+  deterministic opportunity scoring, impact/feasibility matrix, ROI calculator, AI-narrated
+  5-phase transformation roadmap.
+- **Phase 5 — Admin, RBAC, security hardening**: `role_permissions`-based RBAC, `audit_logs` +
+  `feedback` tables (audit wired into all major write paths and AI dispatches), `/admin/*`
+  (users, organizations, AI provider status, AI usage, audit log, feedback), security headers
+  middleware.
+- **Phase 6 — Reporting & analytics**: `/app/analytics` (budget burn trend, task-completion
+  trend, honestly-labeled point-in-time risk snapshot), `/app/reports` (6 report types, print
+  view).
 
 ## Blocked on the user
 
-- **Live Gemini/Groq calls**: the API keys pasted earlier in chat are compromised and were never
-  used. Add freshly rotated keys to `backend/.env` (`GEMINI_API_KEY`, `GROQ_API_KEY`) — live calls
-  activate automatically, no code changes needed. Until then the product correctly runs in Demo AI
-  mode everywhere, including in production/public demo.
+- **Live Gemini/Groq calls**: the API keys pasted in chat earlier are compromised and were never
+  used anywhere. Add freshly rotated keys to `backend/.env` (`GEMINI_API_KEY`, `GROQ_API_KEY`) —
+  live calls activate automatically, no code changes needed. The product runs correctly in Demo
+  AI mode everywhere until then, including in production/public demo.
 
-## Not started
+## Not started — Phase 7 (Quality & Ops)
 
-- **AI Assistant UI / Executive Brief widget**: backend endpoints exist; no `/app/ai-assistant`
-  page or dashboard "AI Management Brief" section yet.
-- **Phase 3 — Document intelligence & RAG**: upload pipeline (PDF/DOCX/TXT), chunking, local
-  `sentence-transformers` embeddings + `pgvector`, grounded Q&A with citations, `/app/documents`.
-- **Phase 4 — AI Consulting Workspace**: `/app/consulting` — 6-dimension opportunity scoring,
-  impact-vs-feasibility matrix, ROI calculator (formula given in spec §38), transformation roadmap
-  generator.
-- **Phase 5 — Admin, RBAC, security hardening**: full roles/permissions tables (today: a simple
-  role string + read-only demo flag, not full RBAC), `/admin/*` (users, organizations, AI provider
-  status/usage telemetry — `ai_requests` table already exists and is being populated, just has no
-  UI yet — audit logs, feedback), notifications, CORS/header/file-validation hardening beyond the
-  Phase 1 baseline.
-- **Phase 6 — Reporting & analytics**: `/app/analytics`, `/app/reports`, one-click report
-  generators (status/executive/risk/budget/AI-transformation/weekly).
-- **Phase 7 — Quality & ops**: unit/integration/API/AI-failure/security test suite, GitHub Actions
-  CI, backend + frontend Dockerfiles (docker-compose currently has postgres + redis only; app
-  services not yet containerized), remaining docs (`AI_ARCHITECTURE.md`, `DATABASE_SCHEMA.md`,
-  `API_DOCUMENTATION.md`, `SECURITY.md`, `DEPLOYMENT.md`, `USER_STORIES.md` with 30+ stories,
-  `TESTING.md`), risk register / milestone plan / roadmap artifacts.
+- Unit/integration/API/AI-failure/security test suite.
+- GitHub Actions CI.
+- Backend + frontend Dockerfiles (docker-compose currently has postgres + redis only).
+- Remaining docs: `AI_ARCHITECTURE.md`, `DATABASE_SCHEMA.md`, `API_DOCUMENTATION.md`,
+  `SECURITY.md`, `DEPLOYMENT.md`, `USER_STORIES.md` (30+ stories), `TESTING.md`.
+- Risk register / milestone plan / roadmap artifacts (project-management-of-the-project docs).
 
 ## Known gaps / follow-ups
 
-- Mobile hamburger-drawer interaction on the app shell was visually confirmed but not
-  click-tested end-to-end (browser tooling limitation during that verification pass) — worth a
-  manual pass on a phone-width viewport.
-- Nav items (Sidebar + Command Bar) for AI Assistant, Documents, Consulting, Analytics, Reports,
-  and Admin should be added only once each page is actually built, per this project's
-  no-dead-links rule — do this as the last step of each corresponding phase above, not before.
+- Mobile hamburger-drawer interaction was verified correct via source review (click-testing was
+  blocked by a reproducible Browser-pane tool limitation on this environment, not an app issue).
+- The Browser preview tool intermittently returns blank/tiled screenshots on a few pages (landing
+  page, mobile viewport, Consulting roadmap tab) — confirmed via DOM/page-text inspection each
+  time that this is a capture artifact, not a real rendering bug. Worth a manual look if it
+  recurs, but not a blocker.

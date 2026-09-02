@@ -1,0 +1,27 @@
+# Keep the build context (and final image) small and secret-free.
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+env/
+
+# Real secrets never belong in the image — configuration is injected via docker-compose
+# `environment:` at runtime instead (see repo-root docker-compose.yml).
+.env
+.env.*
+!.env.example
+
+# Uploaded files are runtime data, not build input (backend/uploads/ is a bind/volume target).
+uploads/*
+!uploads/.gitkeep
+
+# A second, parallel workstream owns backend/tests/ — no reason for it to ride along in the
+# production image, and excluding it avoids racing a build against in-flight edits there.
+tests/
+
+.git/
+.gitignore

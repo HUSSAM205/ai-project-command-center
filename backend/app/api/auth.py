@@ -24,6 +24,14 @@ def _slugify(name: str) -> str:
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    # Email is globally unique (see app/models/user.py), not per-organization — check globally,
+    # before creating an organization for this signup, so a duplicate email fails cleanly with
+    # a 400 rather than the org getting created and then the DB's unique constraint raising an
+    # IntegrityError on the User insert below.
+    existing = db.scalar(select(User).where(User.email == payload.email))
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="email already registered")
+
     slug_base = _slugify(payload.organization_name)
     slug = slug_base
     suffix = 1
@@ -34,12 +42,6 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
     organization = Organization(name=payload.organization_name, slug=slug, is_demo=False)
     db.add(organization)
     db.flush()
-
-    existing = db.scalar(
-        select(User).where(User.organization_id == organization.id, User.email == payload.email)
-    )
-    if existing is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="email already registered")
 
     user = User(
         id=uuid.uuid4(),

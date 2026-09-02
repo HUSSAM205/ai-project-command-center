@@ -35,6 +35,62 @@ services:
       timeout: 5s
       retries: 10
 
+  # Phase 7: app-level services. Both build from the Dockerfiles alongside their source
+  # (backend/Dockerfile, frontend/Dockerfile) and join the same default compose network as
+  # postgres/redis above, so they reach each other by service name ("postgres", "redis",
+  # "backend") rather than localhost.
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aipcc-backend
+    restart: unless-stopped
+    # Picks up JWT_SECRET / JWT_EXPIRES_MINUTES / ENVIRONMENT / GEMINI_API_KEY / GROQ_API_KEY
+    # from the same backend/.env used by the local `uvicorn --reload` dev flow (create it from
+    # .env.example first if it doesn't exist yet — see docs/DEPLOYMENT.md). DATABASE_URL and
+    # REDIS_URL are deliberately overridden below: .env's values point at localhost, which
+    # doesn't resolve inside the container network.
+    env_file:
+      - ./backend/.env
+    environment:
+      # Same Postgres the "postgres" service above already runs (aipcc-postgres-data volume) —
+      # one source of truth, no separate seed step needed for the containerized backend.
+      DATABASE_URL: postgresql+psycopg://appuser:apppass@postgres:5432/aipcc
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - aipcc-backend-uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the client JS bundle at build time (Next.js NEXT_PUBLIC_* convention) —
+        # override by rebuilding with a different NEXT_PUBLIC_API_URL env var, not by editing
+        # the running container.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    container_name: aipcc-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   aipcc-postgres-data:
   aipcc-redis-data:
+  aipcc-backend-uploads:
