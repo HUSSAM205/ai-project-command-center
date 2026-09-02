@@ -1,9 +1,11 @@
 from app.models.consulting import AIOpportunity
 from app.models.enums import RiskSeverity, UtilizationState
+from app.models.pmo import RaciEntry
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.risk import Risk
 from app.schemas.consulting import AIOpportunityOut
+from app.schemas.pmo import RaciEntryOut
 from app.schemas.project import ProjectOut
 from app.schemas.resource import ResourceOut
 from app.schemas.risk import RiskOut
@@ -79,6 +81,26 @@ def serialize_opportunity(opportunity: AIOpportunity) -> AIOpportunityOut:
         overall_score=result.overall_score,
         score_breakdown=result.score_breakdown,
         created_at=opportunity.created_at,
+    )
+
+
+def serialize_raci(entry: RaciEntry) -> RaciEntryOut:
+    """Resource names are denormalized onto the response for a display-ready table (the
+    RACI matrix UI shouldn't have to join against /resources itself) — same "resolve the
+    display name server-side" approach as Task.assignee_name / Project.manager_name."""
+    return RaciEntryOut(
+        id=entry.id,
+        project_id=entry.project_id,
+        task_or_deliverable=entry.task_or_deliverable,
+        responsible_id=entry.responsible_id,
+        responsible_name=entry.responsible.name if entry.responsible else None,
+        accountable_id=entry.accountable_id,
+        accountable_name=entry.accountable.name if entry.accountable else None,
+        consulted_id=entry.consulted_id,
+        consulted_name=entry.consulted.name if entry.consulted else None,
+        informed_id=entry.informed_id,
+        informed_name=entry.informed.name if entry.informed else None,
+        notes=entry.notes,
     )
 
 

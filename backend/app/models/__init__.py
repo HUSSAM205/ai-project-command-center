@@ -6,6 +6,7 @@ from app.models.document import Document, DocumentChunk
 from app.models.feedback import Feedback
 from app.models.milestone import Milestone
 from app.models.organization import Organization
+from app.models.pmo import ContractLedger, RaciEntry, StageGate
 from app.models.project import Project, ProjectMember
 from app.models.resource import Resource, ResourceAllocation
 from app.models.risk import Risk
@@ -36,4 +37,7 @@ __all__ = [
     "BusinessCase",
     "AIOpportunity",
     "RoadmapPhase",
+    "RaciEntry",
+    "StageGate",
+    "ContractLedger",
 ]

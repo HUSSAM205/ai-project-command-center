@@ -487,3 +487,94 @@ export interface RoadmapPhase {
   sequence_order: number;
   source: AISource;
 }
+
+// Advanced PMO engines — mirrors backend app/schemas/pmo.py. EVM and the boardroom memo have
+// no backing table (computed/generated on every call); RACI/stage gates/contract ledger are
+// real CRUD domains.
+export interface EVMAnomaly {
+  metric: string;
+  value: number;
+  level: "warning" | "critical";
+  message: string;
+}
+
+export interface EVM {
+  project_id: string;
+  bac: number;
+  pv: number;
+  ev: number;
+  ac: number;
+  cpi: number | null;
+  spi: number | null;
+  eac: number;
+  vac: number;
+  planned_pct: number;
+  progress: number;
+  method: string;
+  anomalies: EVMAnomaly[];
+}
+
+export interface RaciEntry {
+  id: string;
+  project_id: string;
+  task_or_deliverable: string;
+  responsible_id: string | null;
+  responsible_name: string | null;
+  accountable_id: string | null;
+  accountable_name: string | null;
+  consulted_id: string | null;
+  consulted_name: string | null;
+  informed_id: string | null;
+  informed_name: string | null;
+  notes: string | null;
+}
+
+export type StageGateNumber = "G1" | "G2" | "G3" | "G4" | "G5";
+export type StageGateStatus = "PENDING" | "IN_REVIEW" | "APPROVED" | "REJECTED";
+
+export const STAGE_GATE_ORDER: StageGateNumber[] = ["G1", "G2", "G3", "G4", "G5"];
+
+export interface StageGate {
+  id: string;
+  project_id: string;
+  gate: StageGateNumber;
+  name: string;
+  status: StageGateStatus;
+  approver: string | null;
+  signed_off_at: string | null;
+  notes: string | null;
+}
+
+export interface ContractLedger {
+  project_id: string;
+  total_contract_value: number;
+  billed_to_date: number;
+  wip: number;
+  currency: string;
+  earned_value: number;
+  cost_variance: number;
+  margin_leakage_pct: number;
+  expected_billing_at_progress: number;
+  billing_gap: number;
+  scope_creep_flag: boolean;
+  planned_margin_pct: number;
+  current_margin_pct: number;
+}
+
+export interface TradeOffOption {
+  key: string;
+  title: string;
+  description: string;
+  new_forecast_cost: number;
+  variance_vs_budget: number;
+  assumptions: string[];
+  details: Record<string, unknown>;
+}
+
+export interface BoardroomMemo {
+  project_id: string;
+  project_name: string;
+  generated_at: string;
+  narrative: AIResponse;
+  options: TradeOffOption[];
+}

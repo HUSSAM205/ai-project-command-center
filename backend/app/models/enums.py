@@ -91,3 +91,20 @@ class RoadmapPhaseType(str, enum.Enum):
     PILOT = "PILOT"
     IMPLEMENTATION = "IMPLEMENTATION"
     SCALE = "SCALE"
+
+
+class StageGateNumber(str, enum.Enum):
+    """Fixed 5-gate steering-committee sequence for app/models/pmo.py::StageGate."""
+
+    G1 = "G1"
+    G2 = "G2"
+    G3 = "G3"
+    G4 = "G4"
+    G5 = "G5"
+
+
+class StageGateStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    IN_REVIEW = "IN_REVIEW"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"

@@ -11,7 +11,7 @@ from app.models.enums import RiskLevel, RiskStatus, TaskStatus
 from app.models.project import Project
 from app.models.risk import Risk
 from app.models.task import Task
-from app.services.common import clamp
+from app.services.common import clamp, compute_planned_pct
 
 
 @dataclass
@@ -42,13 +42,7 @@ def compute_health_score(
 ) -> HealthScoreResult:
     today = today or date.today()
 
-    if project.start_date and project.end_date:
-        total_days = max(1, (project.end_date - project.start_date).days)
-        elapsed_days = clamp((today - project.start_date).days, 0, total_days)
-    else:
-        total_days = 1
-        elapsed_days = 0
-    planned_pct = 100.0 * elapsed_days / total_days
+    planned_pct, _total_days, _elapsed_days = compute_planned_pct(project.start_date, project.end_date, today)
 
     progress = project.progress or 0
     schedule_penalty = clamp((planned_pct - progress) * 0.6, 0, 30)

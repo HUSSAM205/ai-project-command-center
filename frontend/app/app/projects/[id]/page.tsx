@@ -1,11 +1,13 @@
 "use client";
 
-import { use, useMemo } from "react";
+import { use, useMemo, useState } from "react";
 import { Line, LineChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, Legend } from "recharts";
-import { api } from "@/lib/api";
+import { Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { api, ApiError } from "@/lib/api";
+import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
-import { Badge, priorityTone, projectStatusTone, riskLevelTone, taskStatusTone } from "@/components/ui/Badge";
+import { AISourceBadge, Badge, priorityTone, projectStatusTone, riskLevelTone, taskStatusTone, type SemanticTone } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -14,11 +16,28 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/LoadingState";
+import { Button } from "@/components/ui/Button";
 import { Gantt } from "@/components/viz/Gantt";
 import { Timeline } from "@/components/viz/Timeline";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
-import { formatCompactCurrency, formatCurrency, formatDate, initials, titleCase } from "@/lib/utils";
-import type { Budget, BudgetTransaction, CostForecast, HealthBreakdown, Project, Resource, ResourceAllocation, Risk, Task } from "@/lib/types";
+import { cn, formatCompactCurrency, formatCurrency, formatDate, formatPercent, initials, titleCase } from "@/lib/utils";
+import type {
+  BoardroomMemo,
+  Budget,
+  BudgetTransaction,
+  ContractLedger,
+  CostForecast,
+  EVM,
+  HealthBreakdown,
+  Project,
+  RaciEntry,
+  Resource,
+  ResourceAllocation,
+  Risk,
+  StageGate,
+  Task,
+} from "@/lib/types";
+import { STAGE_GATE_ORDER } from "@/lib/types";
 
 type TeamRow = ResourceAllocation & { resource?: Resource };
 type BudgetData = { budget: Budget; transactions: BudgetTransaction[]; actual_cost: number };
@@ -198,6 +217,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <DataTable columns={riskColumns} rows={risks.data ?? []} getRowKey={(r) => r.id} emptyTitle="No risks logged" />
               </div>
             ),
+          },
+          {
+            id: "pmo",
+            label: "PMO",
+            content: <PMOTab projectId={id} projectName={p.name} />,
           },
         ]}
       />
@@ -480,6 +504,400 @@ function BudgetTrendChart({
             </div>
             <p className="mt-2 text-xs text-text-tertiary">{forecast.method}</p>
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * Advanced PMO engines: EVM, RACI matrix, stage gates, contract ledger / margin leakage, and
+ * the boardroom memo generator (backend app/api/pmo.py). Each sub-panel fetches independently
+ * so one slow/erroring engine never blocks the others. EVM/contract-ledger numbers are shown
+ * with `font-tabular`, matching this app's existing "monospaced executive readout" convention
+ * (see the Cost Forecast card above and frontend/app/globals.css's font-tabular usage).
+ */
+function PMOTab({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const evm = useApi(() => pmoApi.evm(projectId), [projectId]);
+  const raci = useApi(() => pmoApi.raci(projectId), [projectId]);
+  const stageGates = useApi(() => pmoApi.stageGates(projectId), [projectId]);
+  const contractLedger = useApi(() => pmoApi.contractLedger(projectId), [projectId]);
+
+  return (
+    <div className="space-y-6">
+      <EVMCard loading={evm.loading} error={evm.error} data={evm.data} onRetry={evm.reload} />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <ContractLedgerCard loading={contractLedger.loading} error={contractLedger.error} data={contractLedger.data} onRetry={contractLedger.reload} />
+        <StageGatesCard loading={stageGates.loading} error={stageGates.error} data={stageGates.data} onRetry={stageGates.reload} />
+      </div>
+      <RaciCard loading={raci.loading} error={raci.error} data={raci.data} onRetry={raci.reload} />
+      <BoardroomMemoCard projectId={projectId} projectName={projectName} />
+    </div>
+  );
+}
+
+function evmAnomalyTone(level: string): SemanticTone {
+  return level === "critical" ? "critical" : level === "warning" ? "warning" : "neutral";
+}
+
+function EVMCard({
+  loading,
+  error,
+  data,
+  onRetry,
+}: {
+  loading: boolean;
+  error: Error | null;
+  data: EVM | null;
+  onRetry: () => void;
+}) {
+  const stats: { label: string; value: string; hint?: string }[] = data
+    ? [
+        { label: "PV", value: formatCurrency(data.pv), hint: "Planned Value" },
+        { label: "EV", value: formatCurrency(data.ev), hint: "Earned Value" },
+        { label: "AC", value: formatCurrency(data.ac), hint: "Actual Cost" },
+        { label: "CPI", value: data.cpi !== null ? data.cpi.toFixed(2) : "—", hint: "Cost Performance Index" },
+        { label: "SPI", value: data.spi !== null ? data.spi.toFixed(2) : "—", hint: "Schedule Performance Index" },
+        { label: "EAC", value: formatCurrency(data.eac), hint: "Estimate At Completion" },
+        { label: "VAC", value: formatCurrency(data.vac), hint: "Variance At Completion" },
+      ]
+    : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Earned Value Management</CardTitle>
+          <CardDescription>{data ? data.method : "Deterministic EVM baseline — PV / EV / AC / CPI / SPI / EAC / VAC"}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Spinner />
+        ) : error ? (
+          <ErrorState description={error.message} onRetry={onRetry} />
+        ) : !data ? (
+          <EmptyState title="EVM data unavailable" />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+              {stats.map((s) => (
+                <div key={s.label}>
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{s.label}</p>
+                  <p
+                    className={cn(
+                      "mt-1 font-tabular text-lg font-semibold",
+                      s.label === "VAC" ? (data.vac < 0 ? "text-critical-fg" : "text-success-fg") : "text-text-primary",
+                    )}
+                  >
+                    {s.value}
+                  </p>
+                  {s.hint && <p className="mt-0.5 text-[11px] text-text-tertiary">{s.hint}</p>}
+                </div>
+              ))}
+            </div>
+            {data.anomalies.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-border-default pt-4">
+                {data.anomalies.map((a) => (
+                  <Badge key={a.metric} tone={evmAnomalyTone(a.level)} dot>
+                    {a.message}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ContractLedgerCard({
+  loading,
+  error,
+  data,
+  onRetry,
+}: {
+  loading: boolean;
+  error: Error | null;
+  data: ContractLedger | null;
+  onRetry: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Contract Ledger</CardTitle>
+          <CardDescription>Total contract value, billing, and margin leakage</CardDescription>
+        </div>
+        {data && data.scope_creep_flag && (
+          <Badge tone="critical" dot>
+            Scope creep signal
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Spinner />
+        ) : error ? (
+          <ErrorState description={error.message} onRetry={onRetry} />
+        ) : !data ? (
+          <EmptyState title="No contract ledger set up yet" />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">TCV</p>
+                <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
+                  {formatCompactCurrency(data.total_contract_value, data.currency)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Billed</p>
+                <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
+                  {formatCompactCurrency(data.billed_to_date, data.currency)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">WIP</p>
+                <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
+                  {formatCompactCurrency(data.wip, data.currency)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border-default bg-subtle/50 px-3.5 py-3">
+              <div className="flex items-center gap-2">
+                {data.margin_leakage_pct > 0 ? (
+                  <TrendingDown className="h-4 w-4 text-critical-fg" aria-hidden="true" />
+                ) : (
+                  <TrendingUp className="h-4 w-4 text-success-fg" aria-hidden="true" />
+                )}
+                <span className="text-sm text-text-secondary">Margin leakage</span>
+              </div>
+              <span className={cn("font-tabular text-lg font-semibold", data.margin_leakage_pct > 0 ? "text-critical-fg" : "text-success-fg")}>
+                {formatPercent(data.margin_leakage_pct, 1)}
+              </span>
+            </div>
+            <dl className="space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-text-tertiary">Planned margin</dt>
+                <dd className="font-tabular text-text-primary">{formatPercent(data.planned_margin_pct, 1)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-tertiary">Current margin</dt>
+                <dd className="font-tabular text-text-primary">{formatPercent(data.current_margin_pct, 1)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-text-tertiary">Billing gap</dt>
+                <dd className={cn("font-tabular", data.billing_gap > 0 ? "text-warning-fg" : "text-text-primary")}>
+                  {formatCurrency(data.billing_gap, data.currency)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function stageGateStatusTone(status: string): SemanticTone {
+  switch (status) {
+    case "APPROVED":
+      return "success";
+    case "IN_REVIEW":
+      return "info";
+    case "REJECTED":
+      return "critical";
+    default:
+      return "neutral";
+  }
+}
+
+function StageGatesCard({
+  loading,
+  error,
+  data,
+  onRetry,
+}: {
+  loading: boolean;
+  error: Error | null;
+  data: StageGate[] | null;
+  onRetry: () => void;
+}) {
+  const byGate = new Map((data ?? []).map((g) => [g.gate, g]));
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Stage Gates</CardTitle>
+          <CardDescription>Steering committee sign-off, G1 through G5</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Spinner />
+        ) : error ? (
+          <ErrorState description={error.message} onRetry={onRetry} />
+        ) : (data ?? []).length === 0 ? (
+          <EmptyState title="No stage gates defined yet" />
+        ) : (
+          <ol className="space-y-2.5">
+            {STAGE_GATE_ORDER.filter((g) => byGate.has(g)).map((g) => {
+              const gate = byGate.get(g)!;
+              return (
+                <li key={gate.id} className="flex items-start gap-3 rounded-md border border-border-default px-3.5 py-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-subtle font-tabular text-xs font-semibold text-text-secondary">
+                    {gate.gate}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-text-primary">{gate.name}</p>
+                      <Badge tone={stageGateStatusTone(gate.status)}>{titleCase(gate.status)}</Badge>
+                    </div>
+                    {gate.signed_off_at ? (
+                      <p className="mt-0.5 text-xs text-text-tertiary">
+                        Signed off {formatDate(gate.signed_off_at)}
+                        {gate.approver ? ` by ${gate.approver}` : ""}
+                      </p>
+                    ) : gate.approver ? (
+                      <p className="mt-0.5 text-xs text-text-tertiary">Approver: {gate.approver}</p>
+                    ) : null}
+                    {gate.notes && <p className="mt-1 text-xs text-text-secondary">{gate.notes}</p>}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RaciCard({
+  loading,
+  error,
+  data,
+  onRetry,
+}: {
+  loading: boolean;
+  error: Error | null;
+  data: RaciEntry[] | null;
+  onRetry: () => void;
+}) {
+  const columns: Column<RaciEntry>[] = [
+    { key: "task", header: "Task / Deliverable", render: (r) => <span className="font-medium text-text-primary">{r.task_or_deliverable}</span> },
+    { key: "responsible", header: "Responsible", render: (r) => r.responsible_name ?? <span className="text-text-tertiary">—</span> },
+    { key: "accountable", header: "Accountable", render: (r) => r.accountable_name ?? <span className="text-text-tertiary">—</span> },
+    { key: "consulted", header: "Consulted", render: (r) => r.consulted_name ?? <span className="text-text-tertiary">—</span> },
+    { key: "informed", header: "Informed", render: (r) => r.informed_name ?? <span className="text-text-tertiary">—</span> },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>RACI Matrix</CardTitle>
+          <CardDescription>Responsible, Accountable, Consulted, Informed by deliverable</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <ErrorState description={error.message} onRetry={onRetry} />
+        ) : (
+          <DataTable columns={columns} rows={data ?? []} loading={loading} getRowKey={(r) => r.id} emptyTitle="No RACI entries yet" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BoardroomMemoCard({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const [memo, setMemo] = useState<BoardroomMemo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generate() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await pmoApi.generateBoardroomMemo(projectId);
+      setMemo(result);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to generate the boardroom memo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Boardroom Memo</CardTitle>
+          <CardDescription>Steering-committee brief with 3 computed trade-off options for {projectName}</CardDescription>
+        </div>
+        <Button onClick={generate} loading={loading} disabled={loading} size="sm">
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+          Generate Boardroom Memo
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {error && <ErrorState description={error} onRetry={generate} />}
+        {!error && !memo && !loading && (
+          <EmptyState title="No memo generated yet" description="Click Generate Boardroom Memo to produce a fresh brief from this project's live EVM and contract data." />
+        )}
+        {loading && !memo && (
+          <div className="flex items-center justify-center py-10">
+            <Spinner />
+          </div>
+        )}
+        {memo && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-default pb-4">
+              <div>
+                <p className="text-sm text-text-secondary">{memo.narrative.summary}</p>
+                <p className="mt-1 text-xs text-text-tertiary">Generated {formatDate(memo.generated_at)}</p>
+              </div>
+              <AISourceBadge source={memo.narrative.source} />
+            </div>
+            {memo.narrative.detail && (
+              <p className="whitespace-pre-line text-sm leading-relaxed text-text-secondary">{memo.narrative.detail}</p>
+            )}
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-text-primary">Trade-off Options</h4>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                {memo.options.map((opt) => (
+                  <div key={opt.key} className="rounded-lg border border-border-default p-4">
+                    <p className="text-sm font-semibold text-text-primary">{opt.title}</p>
+                    <p className="mt-1 text-xs text-text-secondary">{opt.description}</p>
+                    <div className="mt-3 space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-text-tertiary">New forecast</span>
+                        <span className="font-tabular font-medium text-text-primary">{formatCurrency(opt.new_forecast_cost)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-tertiary">vs. budget</span>
+                        <span className={cn("font-tabular font-medium", opt.variance_vs_budget > 0 ? "text-critical-fg" : "text-success-fg")}>
+                          {opt.variance_vs_budget > 0 ? "+" : ""}
+                          {formatCurrency(opt.variance_vs_budget)}
+                        </span>
+                      </div>
+                    </div>
+                    <ul className="mt-3 space-y-1 border-t border-border-default pt-2.5">
+                      {opt.assumptions.map((a, i) => (
+                        <li key={i} className="text-[11px] text-text-tertiary">
+                          • {a}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

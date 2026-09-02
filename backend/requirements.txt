@@ -24,3 +24,10 @@ sentence-transformers==6.0.1
 pytest==8.3.4
 pytest-cov==6.0.0
 respx==0.22.0
+
+# --- Server-generated PDF reports (Advanced PMO engines) ---
+# reportlab chosen over weasyprint: pure-Python (no native/system dependency like weasyprint's
+# GTK/Pango/Cairo stack, which is painful on Windows dev machines and adds real image size in
+# Docker), and this app's reports are already structured heading/body/table data (app/schemas/
+# report.py) rather than HTML/CSS that would benefit from weasyprint's HTML rendering.
+reportlab==4.2.5

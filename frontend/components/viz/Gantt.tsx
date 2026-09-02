@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn, formatDate } from "@/lib/utils";
 import type { Milestone, Task } from "@/lib/types";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -26,6 +26,17 @@ const statusBarClass: Record<string, string> = {
 
 export function Gantt({ tasks, milestones }: { tasks: Task[]; milestones: Milestone[] }) {
   const [hovered, setHovered] = useState<string | null>(null);
+  // "Today" is inherently a client-only value (the server's build/render instant almost never
+  // matches the viewer's actual "now", and this component can be reached from a statically
+  // prerendered page — see app/page.tsx's landing preview). Start at `null` so the server render
+  // and the first client render agree (no today marker, no delayed styling), then fill it in via
+  // effect once mounted — same pattern as ThemeToggle's `mounted` gate.
+  const [today, setToday] = useState<Date | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard SSR-safe mount pattern, same as ThemeToggle's `mounted` flag
+    setToday(new Date());
+  }, []);
+
   const usable = tasks.filter((t) => t.start_date && t.due_date);
 
   const { rangeStart, rangeEnd, totalDays } = useMemo(() => {
@@ -34,24 +45,23 @@ export function Gantt({ tasks, milestones }: { tasks: Task[]; milestones: Milest
       dates.push(toDate(t.start_date!), toDate(t.due_date!));
     });
     milestones.forEach((m) => dates.push(toDate(m.due_date)));
-    dates.push(new Date());
+    if (today) dates.push(today);
     if (dates.length === 0) {
-      const today = new Date();
-      return { rangeStart: today, rangeEnd: today, totalDays: 1 };
+      const fallback = today ?? new Date(0);
+      return { rangeStart: fallback, rangeEnd: fallback, totalDays: 1 };
     }
     const min = new Date(Math.min(...dates.map((d) => d.getTime())));
     const max = new Date(Math.max(...dates.map((d) => d.getTime())));
     min.setDate(min.getDate() - 3);
     max.setDate(max.getDate() + 3);
     return { rangeStart: min, rangeEnd: max, totalDays: Math.max(1, daysBetween(min, max)) };
-  }, [usable, milestones]);
+  }, [usable, milestones, today]);
 
   if (usable.length === 0) {
     return <EmptyState title="No scheduled tasks" description="Tasks need a start and due date to appear on the Gantt chart." />;
   }
 
-  const today = new Date();
-  const todayOffset = daysBetween(rangeStart, today) * DAY_WIDTH;
+  const todayOffset = today ? daysBetween(rangeStart, today) * DAY_WIDTH : null;
   const chartWidth = totalDays * DAY_WIDTH;
 
   const months: { label: string; offset: number; width: number }[] = [];
@@ -77,7 +87,7 @@ export function Gantt({ tasks, milestones }: { tasks: Task[]; milestones: Milest
     const end = toDate(t.due_date!);
     const left = daysBetween(rangeStart, start) * DAY_WIDTH;
     const width = Math.max(DAY_WIDTH * 0.6, daysBetween(start, end) * DAY_WIDTH);
-    const isDelayed = end < today && t.status !== "DONE";
+    const isDelayed = today ? end < today && t.status !== "DONE" : false;
     return { left, width, isDelayed };
   }
 
@@ -116,7 +126,7 @@ export function Gantt({ tasks, milestones }: { tasks: Task[]; milestones: Milest
           {/* Rows */}
           <div className="relative">
             {/* Today marker spanning all rows */}
-            {todayOffset >= 0 && todayOffset <= chartWidth && (
+            {todayOffset !== null && todayOffset >= 0 && todayOffset <= chartWidth && (
               <div
                 className="absolute top-0 z-10 w-px bg-brand-600 dark:bg-brand-300"
                 style={{ left: 200 + todayOffset, height: usable.length * ROW_HEIGHT }}

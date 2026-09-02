@@ -11,7 +11,7 @@ than shoehorning risk data into the generic project/portfolio shapes.
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.ai.context import build_portfolio_context, build_project_context
@@ -31,6 +31,7 @@ from app.repositories.risks import list_all_risks_for_org, list_risks_for_projec
 from app.repositories.tasks import list_all_tasks_for_org, list_tasks_for_project
 from app.schemas.ai import AIResponse
 from app.schemas.report import REPORT_TITLES, ReportOut, ReportSection
+from app.services.pdf_report import render_report_pdf
 from app.services.resource_state import compute_all_resource_states, count_overloaded_resources_for_project
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -414,17 +415,15 @@ _BUILDERS = {
 }
 
 
-@router.get("/{report_type}", response_model=ReportOut)
-def get_report(
+def _build_report(
     report_type: str,
-    project_id: UUID | None = Query(default=None),
-    principal: CurrentPrincipal = Depends(get_current_principal),
-    db: Session = Depends(get_db),
-    ai_router: AIOrchestrator = Depends(get_ai_router),
+    project_id: UUID | None,
+    principal: CurrentPrincipal,
+    db: Session,
+    ai_router: AIOrchestrator,
 ) -> ReportOut:
-    """One-click report generator. Demo/read-only tokens can call this — it's a read, not a
-    mutation — subject to the tighter anonymous AI rate limit, same as the other AI-touching
-    read endpoints (/ai/executive-brief, /projects/{id}/ai-insights)."""
+    """Shared by both the JSON endpoint and the PDF endpoint below — the PDF is a rendering of
+    the exact same generated report, never a second/divergent generation path."""
     if report_type not in VALID_REPORT_TYPES:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown report type '{report_type}'")
 
@@ -450,4 +449,41 @@ def get_report(
         project_name=project.name if project is not None else None,
         source=ai_response.source,
         sections=sections,
+    )
+
+
+@router.get("/{report_type}", response_model=ReportOut)
+def get_report(
+    report_type: str,
+    project_id: UUID | None = Query(default=None),
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    ai_router: AIOrchestrator = Depends(get_ai_router),
+) -> ReportOut:
+    """One-click report generator. Demo/read-only tokens can call this — it's a read, not a
+    mutation — subject to the tighter anonymous AI rate limit, same as the other AI-touching
+    read endpoints (/ai/executive-brief, /projects/{id}/ai-insights)."""
+    return _build_report(report_type, project_id, principal, db, ai_router)
+
+
+@router.get("/{report_type}/pdf")
+def get_report_pdf(
+    report_type: str,
+    project_id: UUID | None = Query(default=None),
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+    ai_router: AIOrchestrator = Depends(get_ai_router),
+) -> Response:
+    """Genuine server-generated PDF download of the same report GET /{report_type} returns
+    (same query params, same generation path via _build_report — see app/services/pdf_report.py)
+    — a real one-click download that doesn't depend on the visitor's browser print dialog. The
+    frontend's existing "Print / Save as PDF" button (window.print()) is left in place alongside
+    this; this is an addition, not a replacement."""
+    report = _build_report(report_type, project_id, principal, db, ai_router)
+    pdf_bytes = render_report_pdf(report)
+    filename = f"{report.report_type}-report.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

@@ -33,8 +33,11 @@ import type {
   User,
 } from "./types";
 
+// Relative by default so requests go through the same-origin Next.js rewrite proxy defined in
+// `next.config.ts` (zero CORS, works identically in dev and production). Override with an
+// absolute URL only if you intentionally want the browser to hit the backend directly.
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 
 const TOKEN_KEY = "aipcc_token";
 

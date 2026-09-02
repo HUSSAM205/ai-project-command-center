@@ -15,12 +15,16 @@ COPY . .
 # NEXT_PUBLIC_* variables are inlined into the client JS bundle at build time, not read at
 # container start — so this has to be a build ARG, matching frontend/.env.local's dev default.
 # Changing it later means rebuilding the image, not just restarting the container.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+# Relative by default: requests go through the same-origin rewrite proxy in next.config.ts
+# (see BACKEND_ORIGIN below), so no absolute backend URL needs to be baked into the bundle.
+ARG NEXT_PUBLIC_API_URL=/api/v1
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-# next.config.ts sets output:"standalone" specifically so this build produces a minimal
-# .next/standalone server (only the deps actually traced from the build), which the runtime
-# stage below copies instead of the full node_modules tree.
+# DOCKER_BUILD=1 opts next.config.ts into output:"standalone" for this build (a minimal
+# .next/standalone server — only the deps actually traced from the build), which the runtime
+# stage below copies instead of the full node_modules tree. Vercel/plain `next build` don't set
+# this and get the default output mode, since standalone breaks Vercel's own build pipeline.
+ENV DOCKER_BUILD=1
 RUN npm run build
 
 # ---- runner: minimal production server ---------------------------------------------------

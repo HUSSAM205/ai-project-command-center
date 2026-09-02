@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Printer } from "lucide-react";
+import { Download, FileText, Printer } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { downloadReportPdf } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
 import type { Report, ReportType } from "@/lib/types";
 import { REPORT_TYPES } from "@/lib/types";
@@ -22,6 +23,8 @@ export default function ReportsPage() {
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   async function generate() {
     setLoading(true);
@@ -34,6 +37,18 @@ export default function ReportsPage() {
       setReport(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function downloadPdf() {
+    setPdfLoading(true);
+    setPdfError(null);
+    try {
+      await downloadReportPdf(reportType, projectId || undefined);
+    } catch (err) {
+      setPdfError(err instanceof ApiError ? err.message : "Failed to download the PDF.");
+    } finally {
+      setPdfLoading(false);
     }
   }
 
@@ -121,9 +136,21 @@ export default function ReportsPage() {
               Generate Report
             </Button>
             {report && (
-              <Button variant="outline" onClick={() => window.print()} className="w-full">
-                <Printer className="h-4 w-4" /> Print / Save as PDF
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={downloadPdf}
+                  loading={pdfLoading}
+                  disabled={pdfLoading}
+                  className="w-full"
+                >
+                  <Download className="h-4 w-4" /> Download PDF
+                </Button>
+                <Button variant="outline" onClick={() => window.print()} className="w-full">
+                  <Printer className="h-4 w-4" /> Print / Save as PDF
+                </Button>
+                {pdfError && <p className="text-xs text-critical-fg">{pdfError}</p>}
+              </>
             )}
           </CardContent>
         </Card>

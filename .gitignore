@@ -17,7 +17,9 @@ frontend/.env*.local
 
 # Env files (never commit secrets)
 .env
+.env.*
 backend/.env
+backend/.env.*
 frontend/.env
 
 # OS / editor

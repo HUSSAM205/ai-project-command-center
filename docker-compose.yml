@@ -79,11 +79,16 @@ services:
       dockerfile: Dockerfile
       args:
         # Baked into the client JS bundle at build time (Next.js NEXT_PUBLIC_* convention) —
-        # override by rebuilding with a different NEXT_PUBLIC_API_URL env var, not by editing
-        # the running container.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+        # relative by default so the browser calls the frontend's own origin, which proxies to
+        # the backend server-side (see BACKEND_ORIGIN below); override by rebuilding with a
+        # different NEXT_PUBLIC_API_URL env var, not by editing the running container.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
     container_name: aipcc-frontend
     restart: unless-stopped
+    environment:
+      # Read by next.config.ts's rewrites() at server start, inside this container — "backend"
+      # resolves via the compose network's service discovery, not localhost.
+      BACKEND_ORIGIN: http://backend:8000
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
