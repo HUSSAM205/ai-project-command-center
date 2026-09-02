@@ -1,111 +1,89 @@
 # Deployment Handover
 
-Status as of this writing. This documents exactly what's live, what's provisioned but not yet
-connected, and the one remaining manual step — no claims here are aspirational; everything marked
-done has been verified directly.
+**Status: live in production.** Every claim below was verified directly (curl against the real
+URLs, a real browser load, direct SQL against the production database) — nothing here is
+aspirational.
 
-## What's actually live right now
+## Live public URLs
 
-**Production database — Neon Postgres (provisioned via Vercel Marketplace, free tier)**
-- All 7 Alembic migrations applied cleanly (verified: `alembic upgrade head` ran clean, single
-  head both before and after).
-- Enterprise seed data loaded and verified via direct SQL query: 7 projects, 62 tasks (37 real
-  critical-path dependencies), 23 risks, 24 resources, 15 milestones, 20 RACI rows, 35 stage
-  gates, 7 contract ledger rows. All fictional entities (Vertex Technologies and its fictional
-  clients) — no real company names anywhere in the dataset.
-- Demo accounts confirmed present: `demo@vertextech.com` (ADMIN), `pm@vertextech.com` (MANAGER).
-- Connection details are in `backend/.env.production` (gitignored, never committed) and in the
-  Vercel project's pulled env vars (`frontend/.env.local`, also gitignored).
+- **Frontend (Vercel, production):** https://frontend-eta-one-77.vercel.app
+- **Backend API / Swagger docs (Render):** https://ai-project-command-center-backend.onrender.com/docs
+- **Backend health check:** https://ai-project-command-center-backend.onrender.com/health
 
-**Vercel** — project linked (`hussam205s-projects/frontend`), Neon integration installed and
-connected. A real preview deployment was built and verified `READY`
-(`https://frontend-2p1g33slj-hussam205s-projects.vercel.app`) — this proved the build pipeline
-works after fixing a real bug (see below), but **it is not promoted to production** and **is not
-wired to a live backend yet**, so it will show connection errors on any API call until the steps
-below are completed.
+The frontend talks to the backend through a same-origin reverse proxy (`frontend/next.config.ts`
+`rewrites()`, `BACKEND_ORIGIN` env var set to the Render URL) — the browser never makes a
+cross-origin request, so there is zero CORS friction, and the public API path is simply
+`https://frontend-eta-one-77.vercel.app/api/v1/*`.
 
-## What's provisioned but not yet connected
+## Demo credentials
 
-**Render** — API key confirmed valid (tied to `hossammotasem2005@gmail.com`), an existing
-GitHub-connected service on the account was inspected and used as the exact config template
-(Docker build, `./backend` context, `./backend/Dockerfile`, `/health` healthcheck, free plan,
-Oregon region). **No Render service has been created yet** — see blocker below.
-
-**Redis (Upstash)** — not yet provisioned. Requires the same one-click Vercel Marketplace ToS
-acceptance Neon needed: **https://vercel.com/hussam205s-projects/~/integrations/accept-terms/upstash?source=cli** —
-then `cd frontend && vercel integration add upstash/upstash-kv --claim --json --non-interactive`.
-This is not a hard blocker: the backend was deliberately built to degrade gracefully without
-Redis (cache miss, rate-limit fails open — see `backend/app/core/redis.py`'s docstring), so the
-app will run correctly without it, just without response caching or abuse-rate-limiting until
-it's connected.
-
-## The one remaining blocker
-
-**`git push` was denied by Claude Code's own safety classifier** — a system-level gate, separate
-from any instruction given in this conversation. It explicitly instructs stopping and explaining
-rather than finding a different command to achieve the same result, so that's what happened. This
-blocks the Render deployment specifically, since Render (like the account's existing service)
-deploys from a GitHub repository via commit push, and it also means the Vercel deployment can't be
-finished either, since it needs `BACKEND_ORIGIN` pointed at a real, running backend first.
-
-A private GitHub repo was created and is ready: `https://github.com/HUSSAM205/ai-project-command-center`
-(empty — no code pushed).
-
-### To finish (once unblocked)
-
-1. Push the code: `cd C:\Users\hossa\Downloads\ai-project-command-center && git push -u origin master`
-   (or grant a Bash permission rule for `git push` in settings, and ask again).
-2. Create the Render web service (exact payload, ready to run):
-   ```bash
-   curl -X POST https://api.render.com/v1/services \
-     -H "Authorization: Bearer $RENDER_API_KEY" -H "Content-Type: application/json" \
-     -d '{
-       "type": "web_service",
-       "name": "ai-project-command-center-backend",
-       "ownerId": "tea-d7r1jam7r5hc7393s1gg",
-       "repo": "https://github.com/HUSSAM205/ai-project-command-center",
-       "branch": "master",
-       "autoDeploy": "yes",
-       "serviceDetails": {
-         "env": "docker", "plan": "free", "region": "oregon",
-         "envSpecificDetails": {
-           "dockerfilePath": "./backend/Dockerfile", "dockerContext": "./backend"
-         },
-         "healthCheckPath": "/health"
-       }
-     }'
-   ```
-3. Set env vars on the new service (`DATABASE_URL` from `backend/.env.production`, a freshly
-   generated `JWT_SECRET`, `ENVIRONMENT=production`, `REDIS_URL` once Upstash is connected).
-4. Once the Render service is live, get its URL and:
-   - `cd frontend && vercel env add BACKEND_ORIGIN production` (paste the Render URL)
-   - `vercel deploy --prod`
-5. Verify: hit the Render URL's `/health` and `/docs`, hit the Vercel production URL, click
-   through `/demo`, confirm the full app works end to end against production data.
-6. Rotate the Render API key that was shared in chat, as a routine hygiene step, once deployment
-   is complete — it's not been written to any file or committed, but it did pass through
-   conversation history.
-
-## Live public frontend URL
-Not yet promoted to production — see above. Preview: `https://frontend-2p1g33slj-hussam205s-projects.vercel.app`
-
-## Live public backend API / Swagger docs URL
-Not yet deployed — see blocker above.
-
-## Demo credentials (already seeded in production)
 - Admin: `demo@vertextech.com` / `DemoPass123!`
 - PM: `pm@vertextech.com` / `DemoPass123!`
-- Anonymous read-only: no credentials needed, `/demo`
+- Anonymous read-only: no credentials needed — click "Explore Live Demo" or go to `/demo`. Public
+  visitors never need an API key of their own; the AI layer runs in Demo AI mode (real,
+  data-driven output, zero external calls) since no Gemini/Groq keys are configured.
 
-## Verification status across all 7 build phases (local, fully verified)
-1. Core platform — ✅ verified
-2. AI engineering layer (Demo AI mode) — ✅ verified
-3. Document intelligence / RAG — ✅ verified
-4. AI Consulting Workspace — ✅ verified
-5. Admin / RBAC / security — ✅ verified
-6. Reporting & analytics — ✅ verified
-7. Docker, docs, tests (218/218 passing), CI, PMO engines, enterprise seed data — ✅ verified
+## What's actually running
 
-All of the above is proven against the local dev stack and, for the database layer specifically,
-against the live production Neon database. What remains is exclusively the Render/Vercel
-publish step blocked above — no undone feature work.
+**Neon Postgres** (Vercel Marketplace, free tier) — all 7 Alembic migrations applied, `pgvector`
+extension confirmed installed, enterprise seed data loaded and verified via direct SQL query: 7
+projects, 62 tasks (37 real critical-path dependencies), 23 risks, 24 resources, 15 milestones, 20
+RACI rows, 35 stage gates, 7 contract ledger rows. All fictional entities — no real company names
+anywhere in the dataset.
+
+**Render web service** (`ai-project-command-center-backend`, free plan, Oregon region, Docker
+build from `backend/Dockerfile`) — live and healthy. First deploy attempt failed
+(`update_failed`): it auto-triggered at service creation, before the environment variables were
+set, and crashed on startup with `DATABASE_URL`/`JWT_SECRET` missing. Fixed by confirming the env
+vars were actually attached to the service, then triggering a fresh deploy with cache cleared —
+that one went `live` cleanly.
+
+**Vercel** (`hussam205s-projects/frontend`, production) — deployed after fixing a real build bug
+along the way: `next.config.ts`'s `output: "standalone"` (needed for the Docker/self-hosted build
+path) broke Vercel's own build pipeline; made conditional on a `DOCKER_BUILD=1` env var so both
+deploy targets work.
+
+**Not yet connected — not a blocker:** Redis (Upstash). Requires the same one-click Vercel
+Marketplace ToS acceptance Neon needed:
+https://vercel.com/hussam205s-projects/~/integrations/accept-terms/upstash?source=cli — then
+`cd frontend && vercel integration add upstash/upstash-kv --claim --json --non-interactive`, and
+add the resulting `REDIS_URL` to the Render service's env vars. The backend was deliberately built
+to degrade gracefully without Redis (cache miss, rate-limit fails open — see
+`backend/app/core/redis.py`'s docstring), so the app runs correctly without it; this only means
+AI responses aren't cached and abuse rate-limiting isn't active yet.
+
+**Source:** private GitHub repo, pushed: https://github.com/HUSSAM205/ai-project-command-center
+(Render's `autoDeploy: yes` means every future push to `master` redeploys the backend
+automatically).
+
+## Housekeeping
+
+- Rotate the Render API key that was shared in chat — it was kept memory-only and never written
+  to a file or committed, but it did pass through conversation history.
+- The demo passwords above are intentionally simple/public — this is the point of a public demo
+  org; don't reuse this password pattern for any real account.
+
+## Verification performed (not just claimed)
+
+- `curl https://.../health` → `{"status":"ok","environment":"production"}`
+- `curl https://.../docs` → 200 (Swagger UI live)
+- Logged in as `demo@vertextech.com` against the production API → real token, `GET /dashboard`
+  returned `total_projects: 7, total_tasks: 62` (matches the seed exactly)
+- `POST /api/v1/demo/session` (no credentials) → 201, real read-only token issued
+- Same checks repeated *through the Vercel proxy* (not hitting Render directly) — identical
+  results, confirming the reverse proxy is correctly wired
+- Loaded `https://frontend-eta-one-77.vercel.app/demo` in a real browser — dashboard rendered with
+  live data, SSE "Live" indicator connected, zero console errors
+- Direct SQL query against the production Neon database confirmed `pgvector` extension and all
+  PMO tables (`raci_entries`, `stage_gates`, `contract_ledger`) populated correctly
+
+## Build phase status (all 7, fully verified — locally and now in production)
+
+1. Core platform (projects/tasks/risks/budgets, health score, cost forecast, live dashboard)
+2. AI engineering layer (AIRouter, Demo AI mode, Executive Brief, AI Assistant)
+3. Document intelligence / RAG (local embeddings, pgvector, grounded Q&A)
+4. AI Consulting Workspace (opportunity scoring, ROI calculator, transformation roadmap)
+5. Admin / RBAC / security (audit logging, security headers)
+6. Reporting & analytics (6 report types, PDF export, trend charts)
+7. Docker, docs, 218/218 backend tests passing, CI, PMO engines (EVM/RACI/stage-gates/contract-
+   ledger/boardroom-memos), enterprise-scale seed data, reverse proxy, hydration fixes
