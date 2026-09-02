@@ -108,7 +108,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       // ignore body parse failure
     }
     if (res.status === 403) {
-      message = "This is a read-only demo session — write actions are disabled.";
+      message = "This view is read-only. Get full account access to make changes.";
     }
     throw new ApiError(message, res.status);
   }
@@ -313,7 +313,7 @@ async function uploadDocumentRequest(file: File, projectId?: string): Promise<Do
       // ignore body parse failure
     }
     if (res.status === 403) {
-      message = "This is a read-only demo session — write actions are disabled.";
+      message = "This view is read-only. Get full account access to make changes.";
     }
     throw new ApiError(message, res.status);
   }

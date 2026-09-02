@@ -314,7 +314,7 @@ function BoardroomSection({
           </div>
         )}
 
-        {isDemo && <p className="text-[11px] text-text-tertiary">Read-only demo session — memo generation still works (it&apos;s a computed read, not a write).</p>}
+        {isDemo && <p className="text-[11px] text-text-tertiary">Memo generation is a computed read, not a write — it works in this view.</p>}
       </CardContent>
     </Card>
   );

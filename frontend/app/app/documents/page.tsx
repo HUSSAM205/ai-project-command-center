@@ -98,7 +98,7 @@ export default function DocumentsPage() {
           {isDemo ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-default px-6 py-8 text-center">
               <Upload className="mb-2 h-6 w-6 text-text-tertiary" aria-hidden="true" />
-              <p className="text-sm font-medium text-text-primary">Uploads are disabled in this read-only demo session</p>
+              <p className="text-sm font-medium text-text-primary">Uploads require full account access</p>
               <p className="mt-1 text-xs text-text-tertiary">Sign in with a real account to upload PDF, DOCX, or TXT files.</p>
             </div>
           ) : (

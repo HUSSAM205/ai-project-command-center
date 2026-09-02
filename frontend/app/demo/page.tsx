@@ -41,7 +41,7 @@ export default function DemoPage() {
       <div className="w-full max-w-sm text-center">
         {error ? (
           <ErrorState
-            title="Demo session unavailable"
+            title="Couldn't connect"
             description={error}
             offline={error.includes("offline")}
             onRetry={() => window.location.reload()}
@@ -49,7 +49,7 @@ export default function DemoPage() {
         ) : (
           <>
             <Spinner className="mx-auto h-8 w-8" />
-            <p className="mt-4 text-sm text-text-secondary">Starting your read-only demo session…</p>
+            <p className="mt-4 text-sm text-text-secondary">Loading your workspace…</p>
           </>
         )}
         {error && (

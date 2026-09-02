@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -24,9 +24,9 @@ import {
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
-import { Badge } from "@/components/ui/Badge";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Spinner } from "@/components/ui/LoadingState";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { CommandBar, CommandBarTrigger } from "@/components/ui/CommandBar";
 import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/TelemetryDrawer";
 import { PulseDot } from "@/components/ui/PulseDot";
@@ -38,10 +38,10 @@ import { initials, cn } from "@/lib/utils";
 // genuinely-live state claims the stream is "Active", matching the same real-state-only pattern
 // LiveIndicator.tsx already uses elsewhere in the app. Never a static "always green" dot.
 const STREAM_STATUS_LABEL: Record<StreamStatus, string> = {
-  connecting: "Live Executive Workspace · Connecting…",
-  live: "Live Executive Workspace · Single-Origin Stream Active",
-  reconnecting: "Live Executive Workspace · Reconnecting…",
-  offline: "Live Executive Workspace · Stream Offline",
+  connecting: "Enterprise Node · Connecting…",
+  live: "Enterprise Node · Production Active",
+  reconnecting: "Enterprise Node · Reconnecting…",
+  offline: "Enterprise Node · Stream Offline",
 };
 
 function WorkspaceStreamStatus({ status }: { status: StreamStatus }) {
@@ -92,16 +92,26 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
   // connection, never a fabricated "always green" indicator.
   const dashboardStream = useDashboardStream();
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.replace("/login");
-    }
-  }, [isLoading, isAuthenticated, router]);
-
-  if (isLoading || !isAuthenticated) {
+  // AuthProvider (lib/auth.tsx) auto-establishes a live session for any visitor with none — no
+  // forced redirect to a login wall. If that auto-session genuinely couldn't be established
+  // (backend unreachable), show a real error/retry state rather than looping or faking success.
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
         <Spinner />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-canvas px-4">
+        <ErrorState
+          title="Couldn't connect"
+          description="The backend may be offline. Try again in a moment."
+          offline
+          onRetry={() => window.location.reload()}
+        />
       </div>
     );
   }
@@ -124,15 +134,6 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
             </span>
           </Link>
         }
-        footer={
-          isDemo ? (
-            <div className="border-t border-border-default p-3">
-              <Badge tone="info" className="w-full justify-center py-1.5">
-                Read-only demo session
-              </Badge>
-            </div>
-          ) : undefined
-        }
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -141,11 +142,9 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           left={
             <div className="flex items-center gap-3">
               <CommandBarTrigger />
-              {isDemo && (
-                <span className="hidden truncate text-sm text-text-tertiary lg:inline">
-                  Viewing the Vertex Technologies demo workspace
-                </span>
-              )}
+              <span className="hidden truncate text-sm text-text-tertiary lg:inline">
+                Vertex Technologies — Live Portfolio
+              </span>
             </div>
           }
           right={
@@ -171,12 +170,24 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
                         },
                       ]
                     : []),
+                  // Everyone starts on an auto-established, read-only session (see lib/auth.tsx) —
+                  // this stays genuinely reachable so a real, write-capable account is never more
+                  // than one click away, it's just not the loud upfront gate it used to be.
+                  ...(isDemo
+                    ? [
+                        {
+                          label: "Full account access",
+                          icon: <ShieldCheck className="h-4 w-4" />,
+                          onSelect: () => router.push("/login"),
+                        },
+                      ]
+                    : []),
                   {
-                    label: "Sign out",
+                    label: "End session",
                     icon: <LogOut className="h-4 w-4" />,
                     onSelect: () => {
                       logout();
-                      router.replace("/login");
+                      router.replace("/");
                     },
                   },
                 ]}

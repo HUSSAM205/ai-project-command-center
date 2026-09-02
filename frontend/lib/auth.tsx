@@ -28,7 +28,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing auth state from localStorage on mount
     setIsDemo(demoFlag);
     if (!token) {
-      setIsLoading(false);
+      // No session yet anywhere in the app (first visit, cleared storage, etc.) — establish a
+      // live read-only session automatically rather than gating on a login screen. A real
+      // account remains fully reachable via /login for anyone who wants write access; this only
+      // removes the *forced* stop before someone can look around.
+      api
+        .demoSession()
+        .then((res) => {
+          setToken(res.access_token);
+          window.localStorage.setItem("aipcc_demo", "1");
+          window.localStorage.setItem("aipcc_demo_user", JSON.stringify(res.user));
+          setIsDemo(true);
+          setUser(res.user);
+        })
+        .catch(() => {
+          // Backend unreachable — nothing to auto-establish. Leave unauthenticated; pages that
+          // require a session will show their own real error/retry state rather than a fake one.
+        })
+        .finally(() => setIsLoading(false));
       return;
     }
     // Demo sessions are anonymous — there is no real user row, so `/auth/me` 404s.
