@@ -72,6 +72,11 @@
   --text-on-brand: #ffffff;
   --focus-ring: #3d52a8;
   --shadow-color: 220 20% 40%;
+
+  /* Glass-surface tokens (light) — used sparingly (CommandBar, Drawer) where a floating panel
+     genuinely benefits from showing a hint of what's behind it. Not applied to ordinary Cards. */
+  --glass-surface: rgb(255 255 255 / 72%);
+  --glass-border: rgb(15 23 42 / 10%);
 }
 
 .dark {
@@ -118,6 +123,14 @@
   --info-border: #1d3357;
   --info-fg: #8fb4f0;
   --info-solid: #4e82d6;
+
+  /* Dark mode needs a genuinely dark, near-black shadow color (not the light mode's mid-lightness
+     slate) — a shadow tinted at 40% lightness reads as a highlight, not depth, against these
+     surfaces. Elevation still separates layers here mostly via border + surface-step contrast;
+     the shadow adds a soft downward cue on top of that, same formula as light mode. */
+  --shadow-color: 220 60% 2%;
+  --glass-surface: rgb(13 14 18 / 68%);
+  --glass-border: rgb(255 255 255 / 10%);
 }
 
 @theme inline {
@@ -175,6 +188,17 @@
   --color-info-border: var(--info-border);
   --color-info-fg: var(--info-fg);
   --color-info-solid: var(--info-solid);
+
+  --color-glass-surface: var(--glass-surface);
+  --color-glass-border: var(--glass-border);
+
+  /* Elevation ladder, expressed as shadow — layered on top of the surface-1/2/3 color ladder
+     above so stacked panels (card < popover < command bar / drawer) read as physically closer,
+     not just differently colored. Colored via --shadow-color (redefined per-theme above) rather
+     than a flat black, so it stays a "shadow" instead of a "smudge" in dark mode. */
+  --shadow-elevation-1: 0 1px 2px hsl(var(--shadow-color) / 6%);
+  --shadow-elevation-2: 0 3px 10px -2px hsl(var(--shadow-color) / 14%), 0 1px 2px hsl(var(--shadow-color) / 8%);
+  --shadow-elevation-3: 0 20px 48px -12px hsl(var(--shadow-color) / 32%), 0 2px 6px hsl(var(--shadow-color) / 10%);
 }
 
 * {
@@ -220,4 +244,38 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 8px;
+}
+
+/* Genuine glass-surface treatment — a low-opacity surface + backdrop-blur + hairline border,
+   reserved for panels that float above other content (CommandBar, Drawer). Not applied broadly:
+   ordinary Cards stay opaque so text over dense data tables/charts stays crisp. */
+.glass-surface {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+}
+
+/* Ambient breathing rings behind a live-status dot (see components/ui/PulseDot.tsx). Restrained
+   on purpose: scale + opacity only, no blur/glow, ~2.4s cycle. */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 2.4s cubic-bezier(0.3, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-ring {
+    animation: none;
+    display: none;
+  }
 }

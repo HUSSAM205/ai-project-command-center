@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
+import { RiskRadar } from "@/components/viz/RiskRadar";
 import { titleCase } from "@/lib/utils";
 
 const CATEGORY_OPTIONS = ["SCHEDULE", "BUDGET", "RESOURCE", "TECHNICAL", "SECURITY", "OPERATIONAL", "DEPENDENCY", "EXTERNAL"];
@@ -60,15 +61,27 @@ export default function RisksPage() {
         <ErrorState description={risksApi.error.message} offline={risksApi.error.message?.includes("offline")} onRetry={risksApi.reload} />
       ) : (
         <>
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Probability × Impact Matrix</CardTitle>
-                <CardDescription>Portfolio-wide risk distribution</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>{risksApi.loading ? <Spinner /> : <RiskMatrix risks={risks} />}</CardContent>
-          </Card>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <Card className="xl:col-span-2">
+              <CardHeader>
+                <div>
+                  <CardTitle>Probability × Impact Matrix</CardTitle>
+                  <CardDescription>Portfolio-wide risk distribution</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>{risksApi.loading ? <Spinner /> : <RiskMatrix risks={risks} />}</CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div>
+                  <CardTitle>Risk Categories</CardTitle>
+                  <CardDescription>Severity-weighted score by category — same data, a different lens</CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>{risksApi.loading ? <Spinner /> : <RiskRadar risks={risks} />}</CardContent>
+            </Card>
+          </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative w-full sm:w-64">

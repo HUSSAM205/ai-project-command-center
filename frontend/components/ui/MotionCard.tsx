@@ -20,7 +20,10 @@ export function MotionCard({ className, children, hover = true, ...props }: HTML
       whileHover={hover ? cardHover : undefined}
       className="h-full"
     >
-      <Card className={cn("h-full", className)} {...props}>
+      {/* The lift (whileHover's `y`, above) reads as elevation only if the shadow deepens with
+          it — a plain `transition-shadow` on top of the framer-motion y-spring, so both settle
+          together without fighting over which library owns the transition. */}
+      <Card className={cn("h-full transition-shadow duration-200", hover && "hover:shadow-elevation-2", className)} {...props}>
         {children}
       </Card>
     </motion.div>

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { LinkButton } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { NetworkHero } from "@/components/ui/NetworkHero";
 import { Badge, riskLevelTone, projectStatusTone, SOLID_COLORS } from "@/components/ui/Badge";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -76,7 +77,11 @@ function SiteHeader() {
 function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-border-default">
-      <div className="mx-auto max-w-6xl px-4 py-20 md:px-8 md:py-28">
+      <NetworkHero className="pointer-events-none absolute inset-0 h-full w-full opacity-70 [mask-image:linear-gradient(115deg,black_5%,black_45%,transparent_82%)] dark:opacity-60" />
+      {/* Soft vertical fade at the bottom edge so the network texture settles into the border
+          rather than cutting off hard. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-canvas to-transparent" />
+      <div className="relative mx-auto max-w-6xl px-4 py-20 md:px-8 md:py-28">
         <Reveal className="max-w-2xl">
           <Badge tone="neutral" className="mb-5">Phase 1 · Deterministic Project Intelligence</Badge>
           <h1 className="text-4xl font-semibold tracking-tight text-text-primary md:text-5xl">

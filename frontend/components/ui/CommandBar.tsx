@@ -196,7 +196,7 @@ export function CommandBar() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
             transition={softSpring}
-            className="relative z-10 w-full max-w-lg overflow-hidden rounded-lg border border-border-default bg-surface-3 shadow-2xl"
+            className="glass-surface relative z-10 w-full max-w-lg overflow-hidden rounded-lg border shadow-elevation-3"
           >
             <div className="flex items-center gap-2.5 border-b border-border-default px-4">
               <Search className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden="true" />

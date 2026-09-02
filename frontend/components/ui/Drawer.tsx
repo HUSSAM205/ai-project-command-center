@@ -42,15 +42,21 @@ export function Drawer({
       aria-hidden={!open}
     >
       <div
-        className={cn("absolute inset-0 bg-neutral-950/50 transition-opacity duration-200", open ? "opacity-100" : "opacity-0")}
+        className={cn(
+          "absolute inset-0 bg-neutral-950/50 backdrop-blur-[2px] transition-opacity duration-200",
+          open ? "opacity-100" : "opacity-0",
+        )}
         onClick={onClose}
       />
+      {/* Genuine glass-surface treatment (see .glass-surface in globals.css) — this panel floats
+          directly over the blurred backdrop above, so translucency has something real to show
+          through rather than being applied decoratively. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="drawer-title"
         className={cn(
-          "absolute right-0 top-0 flex h-full w-full flex-col border-l border-border-default bg-surface-raised shadow-2xl transition-transform duration-200",
+          "glass-surface absolute right-0 top-0 flex h-full w-full flex-col border-l shadow-elevation-3 transition-transform duration-200",
           widthClass,
           open ? "translate-x-0" : "translate-x-full",
         )}

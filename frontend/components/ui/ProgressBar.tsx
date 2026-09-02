@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { SemanticTone } from "./Badge";
+import { AnimatedNumber } from "./AnimatedNumber";
 
 const fillClasses: Record<SemanticTone, string> = {
   success: "bg-success-solid",
@@ -29,7 +30,9 @@ export function ProgressBar({
       {(label || showValue) && (
         <div className="flex items-center justify-between mb-1 text-xs text-text-secondary">
           {label && <span>{label}</span>}
-          {showValue && <span className="font-tabular font-medium text-text-primary">{Math.round(pct)}%</span>}
+          {showValue && (
+            <AnimatedNumber value={pct} format={(n) => `${Math.round(n)}%`} className="font-medium text-text-primary" />
+          )}
         </div>
       )}
       <div

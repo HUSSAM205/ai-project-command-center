@@ -178,33 +178,64 @@ export default function ReportsPage() {
   );
 }
 
+/**
+ * Styled like an actual printed document — letterhead, numbered sections with a margin rule, a
+ * jump-to-section index for longer reports — rather than a plain Card dump of text. Keeps every
+ * bit of existing functionality (the .report-printable hook the print stylesheet above targets,
+ * the honest AI-source badge, the raw section.data rendering below) unchanged.
+ */
 function ReportView({ report }: { report: Report }) {
   return (
-    <Card className="report-printable">
-      <CardContent className="space-y-6 py-6">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-default pb-4">
-          <div>
-            <h2 className="text-lg font-semibold text-text-primary">{report.title}</h2>
-            <p className="mt-1 text-sm text-text-tertiary">
-              {report.organization_name}
-              {report.project_name ? ` — ${report.project_name}` : " — Portfolio-wide"}
-            </p>
-            <p className="mt-0.5 text-xs text-text-tertiary">Generated {formatDate(report.generated_at)}</p>
+    <div className="mx-auto max-w-3xl">
+      <div className="report-printable overflow-hidden rounded-xl border border-border-default bg-surface shadow-elevation-2">
+        {/* Letterhead */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border-default bg-subtle/40 px-8 py-5 sm:px-12">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-700 text-[11px] font-bold text-white">
+              AC
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold uppercase tracking-wide text-text-primary">{report.organization_name}</p>
+              <p className="truncate text-[11px] text-text-tertiary">{report.project_name ?? "Portfolio-wide"}</p>
+            </div>
           </div>
           <AISourceBadge source={report.source} />
         </div>
 
-        <div className="space-y-6">
-          {report.sections.map((section, i) => (
-            <section key={`${section.heading}-${i}`}>
-              <h3 className="text-sm font-semibold text-text-primary">{section.heading}</h3>
-              <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-text-secondary">{section.body}</p>
-              {section.data && <SectionData data={section.data} />}
-            </section>
-          ))}
+        <div className="px-8 py-8 sm:px-12 sm:py-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-600 dark:text-brand-300">
+            {titleCase(report.report_type)} report
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">{report.title}</h2>
+          <p className="mt-2 text-xs text-text-tertiary">Generated {formatDate(report.generated_at)}</p>
+
+          {report.sections.length > 1 && (
+            <nav aria-label="Report sections" className="mt-6 flex flex-wrap gap-x-5 gap-y-1.5 border-y border-border-default py-3 text-xs print:hidden">
+              {report.sections.map((section, i) => (
+                <a key={`${section.heading}-${i}`} href={`#report-section-${i}`} className="text-text-tertiary transition-colors hover:text-brand-700 dark:hover:text-brand-300">
+                  <span className="font-tabular font-medium">{String(i + 1).padStart(2, "0")}</span> {section.heading}
+                </a>
+              ))}
+            </nav>
+          )}
+
+          <div className="mt-8 space-y-10">
+            {report.sections.map((section, i) => (
+              <section key={`${section.heading}-${i}`} id={`report-section-${i}`} className="scroll-mt-6">
+                <div className="flex items-baseline gap-3">
+                  <span className="font-tabular text-xs font-semibold text-text-tertiary">{String(i + 1).padStart(2, "0")}</span>
+                  <h3 className="text-base font-semibold text-text-primary">{section.heading}</h3>
+                </div>
+                <div className="mt-3 border-l border-border-default pl-5">
+                  <p className="max-w-[68ch] whitespace-pre-line text-sm leading-relaxed text-text-secondary">{section.body}</p>
+                  {section.data && <SectionData data={section.data} />}
+                </div>
+              </section>
+            ))}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -233,13 +264,15 @@ function DataField({ label, value }: { label: string; value: unknown }) {
       const rows = value as Record<string, unknown>[];
       const columns = Object.keys(rows[0]).filter((k) => k !== "project_name" || rows.some((r) => r[k]));
       return (
-        <div className="overflow-x-auto">
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-tertiary">{label}</p>
+        <div className="mt-4 overflow-x-auto rounded-md border border-border-default">
+          <p className="border-b border-border-default bg-subtle/40 px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+            {label}
+          </p>
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border-default text-left text-text-tertiary">
                 {columns.map((c) => (
-                  <th key={c} className="py-1 pr-3 font-medium">
+                  <th key={c} className="px-3 py-1.5 font-medium">
                     {titleCase(c)}
                   </th>
                 ))}
@@ -247,9 +280,9 @@ function DataField({ label, value }: { label: string; value: unknown }) {
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={i} className="border-b border-border-default/60">
+                <tr key={i} className={cn("border-b border-border-default/60 last:border-0", i % 2 === 1 && "bg-subtle/25")}>
                   {columns.map((c) => (
-                    <td key={c} className="py-1 pr-3 text-text-secondary">
+                    <td key={c} className="px-3 py-1.5 text-text-secondary">
                       {String(row[c] ?? "—")}
                     </td>
                   ))}

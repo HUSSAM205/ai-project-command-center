@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useMemo, useState } from "react";
-import { Line, LineChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, Legend } from "recharts";
+import { Area, ComposedChart, Line, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, Legend } from "recharts";
 import { Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
@@ -12,6 +12,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -270,7 +271,9 @@ function OverviewTab({
                 {breakdownRows.map((row) => (
                   <li key={row.label} className="flex items-center justify-between">
                     <span className="text-text-secondary">{row.label}</span>
-                    <span className="font-tabular font-medium text-critical-fg">-{row.value.toFixed(1)}</span>
+                    <span className="font-tabular font-medium text-critical-fg">
+                      -<AnimatedNumber value={row.value} format={(n) => n.toFixed(1)} />
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -315,20 +318,25 @@ function OverviewTab({
             <Spinner />
           ) : forecastData ? (
             <>
-              <p className="font-tabular text-2xl font-semibold text-text-primary">
-                {formatCurrency(forecastData.forecasted_final_cost)}
-              </p>
+              <AnimatedNumber
+                value={forecastData.forecasted_final_cost}
+                format={(n) => formatCurrency(n)}
+                className="text-2xl font-semibold text-text-primary"
+              />
               <p className="mt-1 text-xs text-text-tertiary">{forecastData.method}</p>
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-text-tertiary">Variance</dt>
                   <dd className={"font-tabular " + (forecastData.variance > 0 ? "text-critical-fg" : "text-success-fg")}>
-                    {formatCurrency(forecastData.variance)} ({forecastData.variance_percent.toFixed(1)}%)
+                    <AnimatedNumber value={forecastData.variance} format={(n) => formatCurrency(n)} /> (
+                    <AnimatedNumber value={forecastData.variance_percent} format={(n) => `${n.toFixed(1)}%`} />)
                   </dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-text-tertiary">Overrun probability</dt>
-                  <dd className="font-tabular text-text-primary">{forecastData.overrun_probability.toFixed(0)}%</dd>
+                  <dd>
+                    <AnimatedNumber value={forecastData.overrun_probability} format={(n) => `${n.toFixed(0)}%`} className="text-text-primary" />
+                  </dd>
                 </div>
               </dl>
             </>
@@ -381,21 +389,27 @@ function BudgetTab({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Initial Budget</p>
-          <p className="mt-2 font-tabular text-xl font-semibold text-text-primary">
-            {formatCompactCurrency(data.budget.initial_budget, data.budget.currency)}
-          </p>
+          <AnimatedNumber
+            value={data.budget.initial_budget}
+            format={(n) => formatCompactCurrency(n, data.budget.currency)}
+            className="mt-2 block text-xl font-semibold text-text-primary"
+          />
         </Card>
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Actual Spend</p>
-          <p className="mt-2 font-tabular text-xl font-semibold text-text-primary">
-            {formatCompactCurrency(data.actual_cost, data.budget.currency)}
-          </p>
+          <AnimatedNumber
+            value={data.actual_cost}
+            format={(n) => formatCompactCurrency(n, data.budget.currency)}
+            className="mt-2 block text-xl font-semibold text-text-primary"
+          />
         </Card>
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Remaining</p>
-          <p className={"mt-2 font-tabular text-xl font-semibold " + (remaining < 0 ? "text-critical-fg" : "text-text-primary")}>
-            {formatCompactCurrency(remaining, data.budget.currency)}
-          </p>
+          <AnimatedNumber
+            value={remaining}
+            format={(n) => formatCompactCurrency(n, data.budget.currency)}
+            className={"mt-2 block text-xl font-semibold " + (remaining < 0 ? "text-critical-fg" : "text-text-primary")}
+          />
         </Card>
       </div>
       <ProgressBar value={utilization} showValue label="Budget utilization" tone={utilization > 100 ? "critical" : utilization > 85 ? "warning" : "success"} />
@@ -471,7 +485,16 @@ function BudgetTrendChart({
           <>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData}>
+                {/* Actual-to-date gets a gradient fill (a real trend series) while Budget/Forecast
+                    stay dashed reference lines — an area chart only earns its place for the one
+                    series that's genuinely a cumulative-to-date read, not the flat/baseline ones. */}
+                <ComposedChart data={trendData}>
+                  <defs>
+                    <linearGradient id="costTrendFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--brand-500)" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="var(--brand-500)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={{ stroke: "var(--border-default)" }} tickLine={false} />
                   <YAxis
@@ -487,7 +510,17 @@ function BudgetTrendChart({
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Line type="monotone" dataKey="Budget" stroke="var(--neutral-400)" strokeDasharray="4 4" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="Actual" name="Actual to date" stroke="var(--brand-500)" strokeWidth={2} connectNulls={false} dot={{ r: 3 }} isAnimationActive={false} />
+                  <Area
+                    type="monotone"
+                    dataKey="Actual"
+                    name="Actual to date"
+                    stroke="var(--brand-500)"
+                    fill="url(#costTrendFill)"
+                    strokeWidth={2}
+                    connectNulls={false}
+                    dot={{ r: 3 }}
+                    isAnimationActive={false}
+                  />
                   <Line
                     type="monotone"
                     dataKey="Forecast"
@@ -499,7 +532,7 @@ function BudgetTrendChart({
                     dot={{ r: 3 }}
                     isAnimationActive={false}
                   />
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
             <p className="mt-2 text-xs text-text-tertiary">{forecast.method}</p>
@@ -551,15 +584,15 @@ function EVMCard({
   data: EVM | null;
   onRetry: () => void;
 }) {
-  const stats: { label: string; value: string; hint?: string }[] = data
+  const stats: { label: string; value: number | null; format: (n: number) => string; hint?: string }[] = data
     ? [
-        { label: "PV", value: formatCurrency(data.pv), hint: "Planned Value" },
-        { label: "EV", value: formatCurrency(data.ev), hint: "Earned Value" },
-        { label: "AC", value: formatCurrency(data.ac), hint: "Actual Cost" },
-        { label: "CPI", value: data.cpi !== null ? data.cpi.toFixed(2) : "—", hint: "Cost Performance Index" },
-        { label: "SPI", value: data.spi !== null ? data.spi.toFixed(2) : "—", hint: "Schedule Performance Index" },
-        { label: "EAC", value: formatCurrency(data.eac), hint: "Estimate At Completion" },
-        { label: "VAC", value: formatCurrency(data.vac), hint: "Variance At Completion" },
+        { label: "PV", value: data.pv, format: (n) => formatCurrency(n), hint: "Planned Value" },
+        { label: "EV", value: data.ev, format: (n) => formatCurrency(n), hint: "Earned Value" },
+        { label: "AC", value: data.ac, format: (n) => formatCurrency(n), hint: "Actual Cost" },
+        { label: "CPI", value: data.cpi, format: (n) => n.toFixed(2), hint: "Cost Performance Index" },
+        { label: "SPI", value: data.spi, format: (n) => n.toFixed(2), hint: "Schedule Performance Index" },
+        { label: "EAC", value: data.eac, format: (n) => formatCurrency(n), hint: "Estimate At Completion" },
+        { label: "VAC", value: data.vac, format: (n) => formatCurrency(n), hint: "Variance At Completion" },
       ]
     : [];
 
@@ -586,11 +619,11 @@ function EVMCard({
                   <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{s.label}</p>
                   <p
                     className={cn(
-                      "mt-1 font-tabular text-lg font-semibold",
+                      "mt-1 text-lg font-semibold",
                       s.label === "VAC" ? (data.vac < 0 ? "text-critical-fg" : "text-success-fg") : "text-text-primary",
                     )}
                   >
-                    {s.value}
+                    {s.value !== null ? <AnimatedNumber value={s.value} format={s.format} /> : "—"}
                   </p>
                   {s.hint && <p className="mt-0.5 text-[11px] text-text-tertiary">{s.hint}</p>}
                 </div>
@@ -648,21 +681,27 @@ function ContractLedgerCard({
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">TCV</p>
-                <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
-                  {formatCompactCurrency(data.total_contract_value, data.currency)}
-                </p>
+                <AnimatedNumber
+                  value={data.total_contract_value}
+                  format={(n) => formatCompactCurrency(n, data.currency)}
+                  className="mt-1 block text-lg font-semibold text-text-primary"
+                />
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Billed</p>
-                <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
-                  {formatCompactCurrency(data.billed_to_date, data.currency)}
-                </p>
+                <AnimatedNumber
+                  value={data.billed_to_date}
+                  format={(n) => formatCompactCurrency(n, data.currency)}
+                  className="mt-1 block text-lg font-semibold text-text-primary"
+                />
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">WIP</p>
-                <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
-                  {formatCompactCurrency(data.wip, data.currency)}
-                </p>
+                <AnimatedNumber
+                  value={data.wip}
+                  format={(n) => formatCompactCurrency(n, data.currency)}
+                  className="mt-1 block text-lg font-semibold text-text-primary"
+                />
               </div>
             </div>
             <div className="flex items-center justify-between rounded-md border border-border-default bg-subtle/50 px-3.5 py-3">
@@ -674,23 +713,25 @@ function ContractLedgerCard({
                 )}
                 <span className="text-sm text-text-secondary">Margin leakage</span>
               </div>
-              <span className={cn("font-tabular text-lg font-semibold", data.margin_leakage_pct > 0 ? "text-critical-fg" : "text-success-fg")}>
-                {formatPercent(data.margin_leakage_pct, 1)}
-              </span>
+              <AnimatedNumber
+                value={data.margin_leakage_pct}
+                format={(n) => formatPercent(n, 1)}
+                className={cn("text-lg font-semibold", data.margin_leakage_pct > 0 ? "text-critical-fg" : "text-success-fg")}
+              />
             </div>
             <dl className="space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <dt className="text-text-tertiary">Planned margin</dt>
-                <dd className="font-tabular text-text-primary">{formatPercent(data.planned_margin_pct, 1)}</dd>
+                <dd><AnimatedNumber value={data.planned_margin_pct} format={(n) => formatPercent(n, 1)} className="text-text-primary" /></dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-text-tertiary">Current margin</dt>
-                <dd className="font-tabular text-text-primary">{formatPercent(data.current_margin_pct, 1)}</dd>
+                <dd><AnimatedNumber value={data.current_margin_pct} format={(n) => formatPercent(n, 1)} className="text-text-primary" /></dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-text-tertiary">Billing gap</dt>
-                <dd className={cn("font-tabular", data.billing_gap > 0 ? "text-warning-fg" : "text-text-primary")}>
-                  {formatCurrency(data.billing_gap, data.currency)}
+                <dd className={cn(data.billing_gap > 0 ? "text-warning-fg" : "text-text-primary")}>
+                  <AnimatedNumber value={data.billing_gap} format={(n) => formatCurrency(n, data.currency)} />
                 </dd>
               </div>
             </dl>

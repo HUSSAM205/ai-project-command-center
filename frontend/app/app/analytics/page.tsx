@@ -20,6 +20,7 @@ import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MotionCard } from "@/components/ui/MotionCard";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { CardSkeleton } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -89,22 +90,28 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <MetricCard label="Total Projects" value={d.total_projects} icon={<FolderKanban className="h-4 w-4" />} />
+        <MetricCard label="Total Projects" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-4 w-4" />} />
         <MetricCard
           label="Portfolio Spend"
-          value={formatCompactCurrency(d.total_actual_cost)}
+          value={<AnimatedNumber value={d.total_actual_cost} format={(n) => formatCompactCurrency(n)} />}
           hint={`of ${formatCompactCurrency(d.total_budget)} budget`}
           icon={<Wallet className="h-4 w-4" />}
         />
         <MetricCard
           label="Burn Rate"
-          value={formatPercent(burnRatePct)}
+          value={<AnimatedNumber value={burnRatePct} format={(n) => formatPercent(n)} />}
           deltaTone={burnRatePct > 100 ? "critical" : "neutral"}
           icon={<TrendingUp className="h-4 w-4" />}
         />
         <MetricCard
           label="Task Completion"
-          value={latestCompletion ? formatPercent(latestCompletion.completion_rate_pct) : "—"}
+          value={
+            latestCompletion ? (
+              <AnimatedNumber value={latestCompletion.completion_rate_pct} format={(n) => formatPercent(n)} />
+            ) : (
+              "—"
+            )
+          }
           hint={latestCompletion ? `as of ${latestCompletion.period}` : "no due-dated tasks"}
           icon={<ShieldAlert className="h-4 w-4" />}
         />
@@ -193,13 +200,17 @@ export default function AnalyticsPage() {
                     <span className="h-2 w-2 rounded-full" style={{ background: SEVERITY_COLORS[k] }} />
                     {k}
                   </span>
-                  <span className="font-tabular font-medium text-text-primary">{v}</span>
+                  <AnimatedNumber value={v} className="font-medium text-text-primary" />
                 </li>
               ))}
             </ul>
             <div className="mt-3 flex items-center gap-3 border-t border-border-default pt-3 text-xs">
-              <Badge tone="warning">{d.risk_snapshot.open_count} open</Badge>
-              <Badge tone="success">{d.risk_snapshot.closed_count} closed</Badge>
+              <Badge tone="warning">
+                <AnimatedNumber value={d.risk_snapshot.open_count} /> open
+              </Badge>
+              <Badge tone="success">
+                <AnimatedNumber value={d.risk_snapshot.closed_count} /> closed
+              </Badge>
             </div>
             <p className="mt-3 text-xs text-text-tertiary">{d.risk_snapshot.note}</p>
           </CardContent>

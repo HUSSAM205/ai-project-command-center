@@ -25,6 +25,14 @@ export const staggerItem: Variants = {
   show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 380, damping: 32 } },
 };
 
+/** Slower-cadence sibling of `staggerContainer` for shorter, more deliberate lists (the
+ * telemetry drawer's provider/usage rows) where a wider gap between items reads as more
+ * considered rather than just "more delay". Pair with `staggerItem` for the children. */
+export const staggerContainerLoose: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.08, delayChildren: 0.04 } },
+};
+
 /** Subtle hover lift for interactive cards — a couple of pixels, not a "float". */
 export const cardHover = { y: -3, transition: { type: "spring", stiffness: 380, damping: 24 } as Transition };
 

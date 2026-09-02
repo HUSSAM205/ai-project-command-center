@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Spinner } from "@/components/ui/LoadingState";
 import { CommandBar, CommandBarTrigger } from "@/components/ui/CommandBar";
+import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/TelemetryDrawer";
 import { useAuth } from "@/lib/auth";
 import { initials } from "@/lib/utils";
 
@@ -109,6 +110,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           }
           right={
             <>
+              <TelemetryDrawerTrigger />
               <ThemeToggle />
               <Dropdown
                 trigger={
@@ -145,6 +147,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
       </div>
 
       <CommandBar />
+      <TelemetryDrawer />
     </div>
   );
 }

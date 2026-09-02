@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { SemanticTone } from "./Badge";
+import { AnimatedNumber } from "./AnimatedNumber";
 
 function toneFromHealth(score: number): SemanticTone {
   if (score >= 80) return "success";
@@ -50,7 +51,11 @@ export function HealthGauge({ score, size = 56 }: { score: number; size?: number
           style={{ transition: "stroke-dashoffset 400ms ease" }}
         />
       </svg>
-      <span className={cn("absolute font-tabular text-sm font-semibold", textColor[tone])}>{Math.round(score)}</span>
+      <AnimatedNumber
+        value={Math.max(0, Math.min(100, score))}
+        format={(n) => Math.round(n).toString()}
+        className={cn("absolute text-sm font-semibold", textColor[tone])}
+      />
     </div>
   );
 }

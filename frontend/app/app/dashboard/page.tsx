@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useMemo } from "react";
+import { motion } from "framer-motion";
 import {
   Bar,
   BarChart,
@@ -22,6 +22,7 @@ import { useDashboardStream } from "@/lib/useDashboardStream";
 import type { ProjectStatus, Resource } from "@/lib/types";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MotionCard } from "@/components/ui/MotionCard";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { CardSkeleton } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -29,6 +30,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, SOLID_COLORS } from "@/components/ui/Badge";
+import { RiskRadar } from "@/components/viz/RiskRadar";
 import { formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
 import { cardHover, staggerContainer, staggerItem } from "@/lib/motion";
 
@@ -53,6 +55,7 @@ export default function DashboardPage() {
   const projects = useApi(() => api.projects(), []);
   const resources = useApi(() => api.resources(), []);
   const brief = useApi(() => api.executiveBrief(), []);
+  const allRisks = useApi(() => api.allRisks(), []);
 
   const worstHealthProjects = useMemo(() => {
     if (!projects.data) return [];
@@ -115,35 +118,35 @@ export default function DashboardPage() {
         className="grid grid-cols-2 gap-4 md:grid-cols-4"
       >
         <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Total Projects" value={<AnimatedMetric value={d.total_projects} />} icon={<FolderKanban className="h-4 w-4" />} />
+          <MetricCard label="Total Projects" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-4 w-4" />} />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Active" value={<AnimatedMetric value={d.active_projects} />} icon={<PlayCircle className="h-4 w-4" />} />
+          <MetricCard label="Active" value={<AnimatedNumber value={d.active_projects} />} icon={<PlayCircle className="h-4 w-4" />} />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Completed" value={<AnimatedMetric value={d.completed_projects} />} icon={<CheckCircle2 className="h-4 w-4" />} />
+          <MetricCard label="Completed" value={<AnimatedNumber value={d.completed_projects} />} icon={<CheckCircle2 className="h-4 w-4" />} />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
           <MetricCard
             label="At Risk"
-            value={<AnimatedMetric value={d.at_risk_projects} />}
+            value={<AnimatedNumber value={d.at_risk_projects} />}
             icon={<AlertTriangle className="h-4 w-4" />}
             deltaTone={d.at_risk_projects > 0 ? "critical" : "neutral"}
           />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Avg. Health Score" value={<AnimatedMetric value={Math.round(d.avg_health_score)} />} hint="Portfolio-wide average" />
+          <MetricCard label="Avg. Health Score" value={<AnimatedNumber value={d.avg_health_score} format={(n) => Math.round(n).toString()} />} hint="Portfolio-wide average" />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Budget Utilization" value={<AnimatedMetric value={formatPercent(d.budget_utilization_pct)} />} hint="Actual vs. total budget" />
+          <MetricCard label="Budget Utilization" value={<AnimatedNumber value={d.budget_utilization_pct} format={(n) => formatPercent(n)} />} hint="Actual vs. total budget" />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Resource Utilization" value={<AnimatedMetric value={formatPercent(d.resource_utilization_pct)} />} hint="Allocated vs. capacity" />
+          <MetricCard label="Resource Utilization" value={<AnimatedNumber value={d.resource_utilization_pct} format={(n) => formatPercent(n)} />} hint="Allocated vs. capacity" />
         </motion.div>
         <motion.div variants={staggerItem} whileHover={cardHover}>
           <MetricCard
             label="Upcoming Deadlines"
-            value={<AnimatedMetric value={d.upcoming_deadlines?.length ?? 0} />}
+            value={<AnimatedNumber value={d.upcoming_deadlines?.length ?? 0} />}
             icon={<Calendar className="h-4 w-4" />}
             hint="Next 30 days"
           />
@@ -179,7 +182,7 @@ export default function DashboardPage() {
         </CardContent>
       </MotionCard>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
         {/* Portfolio health */}
         <MotionCard className="lg:col-span-2">
           <CardHeader>
@@ -245,10 +248,24 @@ export default function DashboardPage() {
                     <span className="h-2 w-2 rounded-full" style={{ background: SEVERITY_COLORS[k] }} />
                     {k}
                   </span>
-                  <span className="font-tabular font-medium text-text-primary">{v}</span>
+                  <AnimatedNumber value={v} className="font-medium text-text-primary" />
                 </li>
               ))}
             </ul>
+          </CardContent>
+        </MotionCard>
+
+        {/* Risk categories — same risk register, a different lens (severity-weighted score by
+            category rather than a count by severity bucket). Real data via api.allRisks(). */}
+        <MotionCard>
+          <CardHeader>
+            <div>
+              <CardTitle>Risk Categories</CardTitle>
+              <CardDescription>Severity-weighted score by category</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <RiskRadar risks={allRisks.data ?? []} />
           </CardContent>
         </MotionCard>
       </div>
@@ -289,7 +306,8 @@ export default function DashboardPage() {
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-neutral-300" /> Budget</span>
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-brand-500" /> Actual</span>
               <span className="ml-auto font-tabular">
-                {formatCompactCurrency(d.total_actual_cost)} / {formatCompactCurrency(d.total_budget)}
+                <AnimatedNumber value={d.total_actual_cost} format={(n) => formatCompactCurrency(n)} /> /{" "}
+                <AnimatedNumber value={d.total_budget} format={(n) => formatCompactCurrency(n)} />
               </span>
             </div>
           </CardContent>
@@ -313,7 +331,7 @@ export default function DashboardPage() {
                     <Badge tone={utilizationTone(state)} dot>
                       {state}
                     </Badge>
-                    <span className="font-tabular text-sm font-medium text-text-primary">{resourceCapacity[state]?.length ?? 0}</span>
+                    <AnimatedNumber value={resourceCapacity[state]?.length ?? 0} className="text-sm font-medium text-text-primary" />
                   </li>
                 ))}
               </ul>
@@ -383,7 +401,7 @@ export default function DashboardPage() {
                     <span className="h-2 w-2 rounded-full" style={{ background: STATUS_COLORS[k] }} />
                     {k.replace("_", " ")}
                   </span>
-                  <span className="font-tabular font-medium text-text-primary">{v}</span>
+                  <AnimatedNumber value={v} className="font-medium text-text-primary" />
                 </li>
               ))}
             </ul>
@@ -396,24 +414,6 @@ export default function DashboardPage() {
 
 function shortName(name: string) {
   return name.length > 16 ? name.slice(0, 15) + "…" : name;
-}
-
-/** Cross-fades in a new value in place — used so live SSE/polling updates don't jump-cut. */
-function AnimatedMetric({ value }: { value: ReactNode }) {
-  return (
-    <AnimatePresence mode="popLayout" initial={false}>
-      <motion.span
-        key={String(value)}
-        initial={{ opacity: 0, y: -6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 6 }}
-        transition={{ duration: 0.25, ease: "easeOut" }}
-        className="inline-block"
-      >
-        {value}
-      </motion.span>
-    </AnimatePresence>
-  );
 }
 
 const tooltipStyle = {
