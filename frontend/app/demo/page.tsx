@@ -7,11 +7,13 @@ import { ApiError } from "@/lib/api";
 import { Spinner } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Button } from "@/components/ui/Button";
+import { useSlowLoadHint } from "@/lib/useSlowLoadHint";
 
 export default function DemoPage() {
   const { startDemo } = useAuth();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const slow = useSlowLoadHint(!error);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +51,9 @@ export default function DemoPage() {
         ) : (
           <>
             <Spinner className="mx-auto h-8 w-8" />
-            <p className="mt-4 text-sm text-text-secondary">Loading your workspace…</p>
+            <p className="mt-4 text-sm text-text-secondary">
+              {slow ? "Still connecting — the live backend can take up to a minute to wake up after being idle." : "Loading your workspace…"}
+            </p>
           </>
         )}
         {error && (

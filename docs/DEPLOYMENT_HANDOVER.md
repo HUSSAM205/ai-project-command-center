@@ -80,6 +80,21 @@ automatically).
 - **Confirmed post-deployment**: a routine doc-only commit auto-triggered a Render redeploy
   (`autoDeploy: yes`) and it went `live` cleanly on the first try — the pipeline itself is stable,
   not a one-off fluke from the initial manual fix.
+- **Render's cold start doesn't always fail fast.** A later production check found the site stuck
+  on a bare spinner for 30-45s straight — reproduced live: Render's edge showed its own
+  "Application loading" holding page for that whole window instead of returning a fast 502, so the
+  GET-retry above never even engaged (nothing to retry — the request was just genuinely slow, not
+  erroring), and it eventually resolved into a normal, correct page load once the container
+  finished booting. Not a hang — auth and data fetching are both correct — just no feedback during
+  a long wait. Two changes: (1) `lib/useSlowLoadHint.ts` turns the bare spinner on the root entry
+  page, the app shell's initial auth check, and `/demo` into "Still connecting — the live backend
+  can take up to a minute to wake up after being idle" once the wait passes 4s, so a slow cold
+  start reads as "warming up" instead of "broken"; (2) `demoSession()` (`POST /demo/session`) now
+  opts into the same gateway-error retry GETs get (`request()`'s new `idempotent` option in
+  `lib/api.ts`) — safe here specifically because that endpoint only reads the already-seeded demo
+  org and mints a token, no side effects, so retrying it is never wrong. Verified: a fresh guest
+  visit against a healthy local backend still loads instantly with no hint flash (confirms no
+  regression), and the failure mode itself was reproduced and confirmed to resolve correctly.
 
 ## Verification performed (not just claimed)
 

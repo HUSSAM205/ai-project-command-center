@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { Spinner } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { useSlowLoadHint } from "@/lib/useSlowLoadHint";
 
 /**
  * Root route: no marketing interstitial before the product. `AuthProvider` (lib/auth.tsx)
@@ -18,6 +19,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 export default function RootEntry() {
   const { isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
+  const slow = useSlowLoadHint(isLoading);
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
@@ -40,8 +42,13 @@ export default function RootEntry() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-canvas px-4 text-center">
       <Spinner className="h-8 w-8" />
+      {slow && (
+        <p className="max-w-xs text-sm text-text-tertiary">
+          Still connecting — the live backend can take up to a minute to wake up after being idle.
+        </p>
+      )}
     </div>
   );
 }

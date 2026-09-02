@@ -73,19 +73,26 @@ interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   auth?: boolean;
+  // Opt-in only: allows a non-GET request to share the same gateway-error retry as GETs below.
+  // Reserved for calls that are genuinely safe to reissue — no side effects, same result every
+  // time (e.g. demoSession(), which only reads the already-seeded demo org and mints a token;
+  // see backend/app/api/demo.py). Every other mutating call stays "one honest attempt, surfaced
+  // to the user" — this must never be set for anything that creates/modifies/deletes real data.
+  idempotent?: boolean;
 }
 
 // Render's free-tier backend sleeps after ~15 minutes with no traffic; waking it up can briefly
 // surface as a 502/503/504 from Render's own edge (not the application) while the container spins
 // back up. Retrying a GET a few times with backoff resolves this invisibly instead of showing an
 // error for what is, from the user's perspective, nothing having gone wrong. Never retries
-// mutating requests (POST/PATCH/PUT/DELETE) — those get one honest attempt, since a transient
-// gateway error on a write is surfaced to the user rather than silently reissued.
+// mutating requests (POST/PATCH/PUT/DELETE) unless explicitly marked `idempotent` above — those
+// get one honest attempt, since a transient gateway error on a write is surfaced to the user
+// rather than silently reissued.
 const GATEWAY_RETRY_STATUSES = new Set([502, 503, 504]);
 const GATEWAY_RETRY_DELAYS_MS = [800, 1600, 2800];
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, signal, auth = true } = options;
+  const { method = "GET", body, signal, auth = true, idempotent = false } = options;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
   if (auth) {
@@ -109,7 +116,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         0,
       );
     }
-    const canRetry = method === "GET" && GATEWAY_RETRY_STATUSES.has(res.status) && attempt < GATEWAY_RETRY_DELAYS_MS.length;
+    const canRetry =
+      (method === "GET" || idempotent) && GATEWAY_RETRY_STATUSES.has(res.status) && attempt < GATEWAY_RETRY_DELAYS_MS.length;
     if (!canRetry) break;
     await new Promise((resolve) => setTimeout(resolve, GATEWAY_RETRY_DELAYS_MS[attempt]));
     attempt += 1;
@@ -143,7 +151,7 @@ export const api = {
   register: (payload: { email: string; password: string; full_name: string; organization_name: string }) =>
     request<AuthResponse>("/auth/register", { method: "POST", body: payload, auth: false }),
   me: () => request<User>("/auth/me"),
-  demoSession: () => request<AuthResponse>("/demo/session", { method: "POST", auth: false }),
+  demoSession: () => request<AuthResponse>("/demo/session", { method: "POST", auth: false, idempotent: true }),
 
   // Dashboard
   dashboard: () => request<DashboardSummary>("/dashboard"),

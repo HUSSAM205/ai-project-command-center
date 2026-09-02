@@ -33,6 +33,7 @@ import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/Telemet
 import { PulseDot } from "@/components/ui/PulseDot";
 import { useAuth } from "@/lib/auth";
 import { useDashboardStream, type StreamStatus } from "@/lib/useDashboardStream";
+import { useSlowLoadHint } from "@/lib/useSlowLoadHint";
 import { initials, cn } from "@/lib/utils";
 
 // Honest labels per real SSE/dashboard-stream connection state (useDashboardStream.ts) — only the
@@ -92,14 +93,20 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
   // the dashboard page itself uses (lib/useDashboardStream.ts), so the pulse reflects the actual
   // connection, never a fabricated "always green" indicator.
   const dashboardStream = useDashboardStream();
+  const slowAuth = useSlowLoadHint(isLoading);
 
   // AuthProvider (lib/auth.tsx) auto-establishes a live session for any visitor with none — no
   // forced redirect to a login wall. If that auto-session genuinely couldn't be established
   // (backend unreachable), show a real error/retry state rather than looping or faking success.
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-canvas">
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-canvas px-4 text-center">
         <Spinner />
+        {slowAuth && (
+          <p className="max-w-xs text-sm text-text-tertiary">
+            Still connecting — the live backend can take up to a minute to wake up after being idle.
+          </p>
+        )}
       </div>
     );
   }
