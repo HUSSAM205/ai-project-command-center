@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, TrendingDown } from "lucide-react";
+import { AlertTriangle, TrendingDown, WifiOff } from "lucide-react";
 import { api } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge, type SemanticTone } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
@@ -18,6 +17,7 @@ import { Select } from "@/components/ui/Select";
 import { cn, formatCompactCurrency, formatCurrency, formatPercent, titleCase } from "@/lib/utils";
 import type { ContractLedger, EVM, Project, RaciEntry, StageGate, StageGateNumber } from "@/lib/types";
 import { STAGE_GATE_ORDER } from "@/lib/types";
+import { buildOfflinePmoPortfolio, withTimeout } from "@/lib/offlinePreview";
 
 interface ProjectPmo {
   project: Project;
@@ -27,24 +27,42 @@ interface ProjectPmo {
   ledger: ContractLedger | null;
 }
 
+interface PortfolioPmoResult {
+  rows: ProjectPmo[];
+  offline: boolean;
+}
+
 /** Fetches the same per-project PMO endpoints the project detail page's PMO tab already calls
  * (pmoApi.evm/stageGates/raci/contractLedger — backend/app/api/pmo.py) for every project, then
  * combines them client-side — the same aggregation shape as lib/api.ts's allTasks()/allRisks()
  * helpers use for their own cross-project rollups. No new backend endpoint. The contract ledger
- * fetch is what powers the scope-creep what-if simulator and realization-rate table below. */
-async function loadPortfolioPmo(): Promise<ProjectPmo[]> {
-  const projects = await api.projects();
-  return Promise.all(
-    projects.map(async (project) => {
-      const [evm, gates, raci, ledger] = await Promise.all([
-        pmoApi.evm(project.id).catch(() => null),
-        pmoApi.stageGates(project.id).catch(() => [] as StageGate[]),
-        pmoApi.raci(project.id).catch(() => [] as RaciEntry[]),
-        pmoApi.contractLedger(project.id).catch(() => null),
-      ]);
-      return { project, evm, gates, raci, ledger };
-    }),
-  );
+ * fetch is what powers the scope-creep what-if simulator and realization-rate table below.
+ *
+ * Individual project rows already degrade field-by-field on a per-call failure (the .catch()s
+ * below). The only way this whole page used to fail outright was api.projects() itself throwing
+ * — after GET auto-retry (lib/api.ts) is exhausted, or the load hanging past
+ * offlinePreview.OVERALL_TIMEOUT_MS. In that case, fall back to a static, clearly-labeled
+ * fictional portfolio (lib/offlinePreview.ts) instead of a bare error box — this page is
+ * public-facing, so "always renders something real-looking, honestly labeled" beats "sometimes
+ * shows a red crash". The `offline` flag drives the banner in the page body below. */
+async function loadPortfolioPmo(): Promise<PortfolioPmoResult> {
+  try {
+    const projects = await withTimeout(api.projects());
+    const rows = await Promise.all(
+      projects.map(async (project) => {
+        const [evm, gates, raci, ledger] = await Promise.all([
+          pmoApi.evm(project.id).catch(() => null),
+          pmoApi.stageGates(project.id).catch(() => [] as StageGate[]),
+          pmoApi.raci(project.id).catch(() => [] as RaciEntry[]),
+          pmoApi.contractLedger(project.id).catch(() => null),
+        ]);
+        return { project, evm, gates, raci, ledger };
+      }),
+    );
+    return { rows, offline: false };
+  } catch {
+    return { rows: buildOfflinePmoPortfolio(), offline: true };
+  }
 }
 
 function stageGateStatusTone(status: string): SemanticTone {
@@ -62,7 +80,8 @@ function stageGateStatusTone(status: string): SemanticTone {
 
 export default function PmoWorkspacePage() {
   const portfolio = useApi(loadPortfolioPmo, []);
-  const rows = useMemo(() => portfolio.data ?? [], [portfolio.data]);
+  const rows = useMemo(() => portfolio.data?.rows ?? [], [portfolio.data]);
+  const offline = portfolio.data?.offline ?? false;
 
   const rollup = useMemo(() => {
     const withEvm = rows.filter((r): r is ProjectPmo & { evm: EVM } => r.evm !== null);
@@ -184,9 +203,20 @@ export default function PmoWorkspacePage() {
         </p>
       </div>
 
-      {portfolio.error ? (
-        <ErrorState description={portfolio.error.message} offline={portfolio.error.message?.includes("offline")} onRetry={portfolio.reload} />
-      ) : portfolio.loading ? (
+      {offline && (
+        <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-bg px-3.5 py-2.5 text-sm text-warning-fg">
+          <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            Live backend unreachable — showing an offline preview with illustrative portfolio data, not your organization&apos;s real
+            figures.
+          </span>
+          <button type="button" onClick={portfolio.reload} className="ml-auto shrink-0 font-medium underline underline-offset-2">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {portfolio.loading ? (
         <div className="flex h-64 items-center justify-center">
           <Spinner />
         </div>

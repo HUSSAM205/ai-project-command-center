@@ -27,6 +27,11 @@ from app.schemas.report import ReportOut
 _BRAND = colors.HexColor("#4338ca")
 _MUTED = colors.HexColor("#6b7280")
 _BORDER = colors.HexColor("#d1d5db")
+_ACCENT_CYAN = colors.HexColor("#38bdf8")
+_ACCENT_VIOLET = colors.HexColor("#818cf8")
+
+_FOOTER_TEXT = "MANAGED & POWERED BY "
+_FOOTER_BRAND = "ES EASY SOLUTIONS"
 
 _SOURCE_LABELS = {
     "gemini": "Gemini (live)",
@@ -94,6 +99,28 @@ def _section_data_flowables(data: dict, styles) -> list:
     return flowables
 
 
+def _draw_brand_footer(canvas, doc) -> None:
+    """Draws the "MANAGED & POWERED BY ES EASY SOLUTIONS" signature line centered in the bottom
+    margin of every page. Uses two colors within one line (plain text + a cyan-to-violet accent
+    on the brand name) — reportlab's Canvas has no gradient-text primitive, so the accent is
+    approximated with the midpoint of the two brand colors, closest to the web UI's gradient
+    without a second rendering pass per glyph."""
+    canvas.saveState()
+    page_width = doc.pagesize[0]
+    y = 0.45 * inch
+    canvas.setFont("Courier", 7)
+    label_width = canvas.stringWidth(_FOOTER_TEXT, "Courier", 7)
+    brand_width = canvas.stringWidth(_FOOTER_BRAND, "Courier", 7)
+    total_width = label_width + brand_width
+    x = (page_width - total_width) / 2
+    canvas.setFillColor(_MUTED)
+    canvas.drawString(x, y, _FOOTER_TEXT)
+    accent = colors.HexColor("#5fa9e8")  # midpoint of _ACCENT_CYAN / _ACCENT_VIOLET
+    canvas.setFillColor(accent)
+    canvas.drawString(x + label_width, y, _FOOTER_BRAND)
+    canvas.restoreState()
+
+
 def render_report_pdf(report: ReportOut) -> bytes:
     """Returns raw PDF bytes for the given already-generated report."""
     buffer = BytesIO()
@@ -103,7 +130,7 @@ def render_report_pdf(report: ReportOut) -> bytes:
         leftMargin=0.75 * inch,
         rightMargin=0.75 * inch,
         topMargin=0.75 * inch,
-        bottomMargin=0.75 * inch,
+        bottomMargin=0.9 * inch,
         title=report.title,
     )
     styles = _styles()
@@ -132,5 +159,5 @@ def render_report_pdf(report: ReportOut) -> bytes:
             story.append(Spacer(1, 4))
             story.extend(_section_data_flowables(section.data, styles))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_brand_footer, onLaterPages=_draw_brand_footer)
     return buffer.getvalue()

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Briefcase } from "lucide-react";
+import { Plus, Briefcase, WifiOff } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { BusinessCase } from "@/lib/types";
@@ -10,11 +10,29 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
-import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { useAuth } from "@/lib/auth";
-import { formatCompactCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCompactCurrency, formatDate } from "@/lib/utils";
+import { buildOfflineConsultingCases, withTimeout } from "@/lib/offlinePreview";
+
+interface ConsultingCasesResult {
+  cases: BusinessCase[];
+  offline: boolean;
+}
+
+/** Same fallback discipline as the PMO workspace (see lib/offlinePreview.ts): GET auto-retry in
+ * lib/api.ts already covers a Render cold-start, so this only engages once that's exhausted or
+ * the request hangs past OVERALL_TIMEOUT_MS. Falls back to a static, honestly-labeled fictional
+ * case list rather than a bare error box. */
+async function loadBusinessCases(): Promise<ConsultingCasesResult> {
+  try {
+    const cases = await withTimeout(api.consulting.businessCases());
+    return { cases, offline: false };
+  } catch {
+    return { cases: buildOfflineConsultingCases(), offline: true };
+  }
+}
 
 const EMPTY_FORM = {
   name: "",
@@ -31,7 +49,9 @@ const EMPTY_FORM = {
 export default function ConsultingPage() {
   const router = useRouter();
   const { isDemo } = useAuth();
-  const cases = useApi(() => api.consulting.businessCases(), []);
+  const cases = useApi(loadBusinessCases, []);
+  const rows = cases.data?.cases ?? [];
+  const offline = cases.data?.offline ?? false;
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
@@ -78,20 +98,31 @@ export default function ConsultingPage() {
             Digital transformation business cases — scored opportunities, an ROI calculator, and an AI-narrated roadmap.
           </p>
         </div>
-        {!isDemo && (
+        {!isDemo && !offline && (
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus className="h-4 w-4" /> New Business Case
           </Button>
         )}
       </div>
 
-      {cases.error ? (
-        <ErrorState description={cases.error.message} offline={cases.error.message?.includes("offline")} onRetry={cases.reload} />
-      ) : cases.loading ? (
+      {offline && (
+        <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-bg px-3.5 py-2.5 text-sm text-warning-fg">
+          <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            Live backend unreachable — showing an offline preview with illustrative business cases, not your organization&apos;s real
+            data.
+          </span>
+          <button type="button" onClick={cases.reload} className="ml-auto shrink-0 font-medium underline underline-offset-2">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {cases.loading ? (
         <div className="flex h-40 items-center justify-center">
           <Spinner />
         </div>
-      ) : (cases.data ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={<Briefcase className="h-8 w-8" />}
           title="No business cases yet"
@@ -106,11 +137,11 @@ export default function ConsultingPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(cases.data ?? []).map((c: BusinessCase) => (
+          {rows.map((c: BusinessCase) => (
             <Card
               key={c.id}
-              className="cursor-pointer p-5 transition-colors hover:bg-subtle"
-              onClick={() => router.push(`/app/consulting/${c.id}`)}
+              className={cn("p-5 transition-colors", offline ? "cursor-default opacity-90" : "cursor-pointer hover:bg-subtle")}
+              onClick={() => !offline && router.push(`/app/consulting/${c.id}`)}
             >
               <p className="font-medium text-text-primary">{c.name}</p>
               <p className="mt-1.5 line-clamp-2 text-xs text-text-tertiary">{c.business_problem}</p>

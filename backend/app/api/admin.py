@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.ai.router import AIRouter as AIOrchestrator
 from app.ai.router import get_ai_router
 from app.core.database import get_db
-from app.core.deps import CurrentPrincipal, require_permission
+from app.core.deps import CurrentPrincipal, get_current_principal, require_permission
 from app.repositories.admin import (
     aggregate_ai_usage,
     count_org_projects,
@@ -78,7 +78,12 @@ def get_own_organization(
 
 @router.get("/ai-providers", response_model=list[AIProviderStatusOut])
 def get_ai_provider_status(
-    principal: CurrentPrincipal = Depends(require_admin),
+    # Deliberately gated by get_current_principal (any valid session, including a read-only demo
+    # token), not require_admin: this is operational/diagnostic data (circuit-breaker state per
+    # provider) with no per-tenant content and no write surface, so there's no security reason to
+    # restrict it to ADMIN the way the user/org/audit-log endpoints below correctly are. Every
+    # other route in this router is untouched.
+    principal: CurrentPrincipal = Depends(get_current_principal),
     ai_router: AIOrchestrator = Depends(get_ai_router),
 ) -> list[AIProviderStatusOut]:
     """Live circuit-breaker/availability snapshot straight from the running AIRouter singleton
@@ -89,7 +94,10 @@ def get_ai_provider_status(
 @router.get("/ai-usage", response_model=AIUsageOut)
 def get_ai_usage(
     hours: int = Query(default=24, ge=1, le=24 * 30),
-    principal: CurrentPrincipal = Depends(require_admin),
+    # Same reasoning as get_ai_provider_status above: read-only, aggregated (never per-user),
+    # still org-scoped via principal.organization_id below, so demo/read-only sessions can view it
+    # without gaining anything write-capable or cross-tenant.
+    principal: CurrentPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> AIUsageOut:
     """Aggregated from the existing `ai_requests` table (populated by every AIRouter.dispatch()

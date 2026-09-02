@@ -6,14 +6,20 @@ aspirational.
 
 ## Live public URLs
 
-- **Frontend (Vercel, production):** https://frontend-eta-one-77.vercel.app
+- **Frontend (Vercel, production):** https://ai-project-mgmt-system.vercel.app (branded alias) or
+  https://frontend-eta-one-77.vercel.app (original alias — kept working, both point at the same
+  production deployment). The exact requested alias `ai-project-management-system.vercel.app` was
+  already claimed by an unrelated Vercel account — `.vercel.app` is a shared global namespace, not
+  scoped per-account, so it couldn't be taken; `ai-project-mgmt-system` was the closest available
+  match. No code hardcodes either hostname (no `metadataBase`/canonical URL is set anywhere in the
+  app), so nothing else needed to change for this to work — both aliases already serve identically.
 - **Backend API / Swagger docs (Render):** https://ai-project-command-center-backend.onrender.com/docs
 - **Backend health check:** https://ai-project-command-center-backend.onrender.com/health
 
 The frontend talks to the backend through a same-origin reverse proxy (`frontend/next.config.ts`
 `rewrites()`, `BACKEND_ORIGIN` env var set to the Render URL) — the browser never makes a
 cross-origin request, so there is zero CORS friction, and the public API path is simply
-`https://frontend-eta-one-77.vercel.app/api/v1/*`.
+`<frontend-origin>/api/v1/*` on either alias above.
 
 ## Demo credentials
 
@@ -97,5 +103,38 @@ automatically).
 4. AI Consulting Workspace (opportunity scoring, ROI calculator, transformation roadmap)
 5. Admin / RBAC / security (audit logging, security headers)
 6. Reporting & analytics (6 report types, PDF export, trend charts)
-7. Docker, docs, 218/218 backend tests passing, CI, PMO engines (EVM/RACI/stage-gates/contract-
+7. Docker, docs, 222/222 backend tests passing, CI, PMO engines (EVM/RACI/stage-gates/contract-
    ledger/boardroom-memos), enterprise-scale seed data, reverse proxy, hydration fixes
+
+## Workspace resilience & telemetry visibility (this round)
+
+- **PMO/Consulting workspaces never show a bare error box.** Both pages already benefited from
+  the GET auto-retry above; this adds a last-resort fallback (`frontend/lib/offlinePreview.ts`)
+  for when that's exhausted or a load hangs past 9s: a static, fictional, internally-consistent
+  preview dataset renders instead, with a visible "offline preview" banner. It is never presented
+  as live data — same labeling discipline as `lib/localExecutiveBrief.ts`'s dashboard fallback.
+  Verified locally by forcing real request failures (corrupted the session token) and confirming
+  both the banner and the full fallback dataset render correctly, then confirmed the real/live
+  path still renders real seeded data normally when the backend is healthy.
+- **Live Telemetry (AI provider status/usage) is now visible to any authenticated session**,
+  including the default read-only demo session — not just ADMIN. This was done as a genuine
+  backend permission change (`backend/app/api/admin.py`'s `/ai-providers` and `/ai-usage` now use
+  `get_current_principal` instead of `require_permission("admin.access")`), not a client-side
+  role change: a client-side-only "look like admin" flag would have done nothing, since the real
+  RBAC check happens server-side and is DB-backed (`backend/tests/security/test_rbac.py`, updated
+  and re-verified — 31/31 RBAC tests pass, 222/222 full suite passes). Every other `/admin/*`
+  route (users, organizations, audit logs, feedback, all mutations) is untouched and still
+  requires `admin.access`; verified directly against the running local backend that a demo/VIEWER
+  token gets 200 on the two telemetry routes and still gets 403 on `/admin/users` and on a
+  mutating request.
+- **Document upload is no longer hard-blocked for demo sessions.** The real, write-gated
+  `POST /documents` endpoint is untouched (still requires a non-read-only token). A demo session
+  instead gets a genuine client-side-only simulation (`simulateLocalUpload()` in
+  `frontend/app/app/documents/page.tsx`) — reads the dropped file's real size, estimates a
+  plausible chunk count, and renders it in a clearly separate "Local preview (not saved)" list.
+  Nothing is sent to the server.
+- **"MANAGED & POWERED BY ES EASY SOLUTIONS" badge** (`frontend/components/ui/BrandFooter.tsx`)
+  is now in the sidebar footer, the topbar, and — for the backend-generated report PDFs
+  (`backend/app/services/pdf_report.py`) — a matching signature line drawn on every page.
+- **New Vercel alias:** https://ai-project-mgmt-system.vercel.app (see "Live public URLs" above
+  for why this exact name and not the originally-requested one).

@@ -1,10 +1,17 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolved relative to this file (backend/app/core/config.py -> backend/.env), not the process's
+# current working directory — a bare ".env" only worked when the process happened to be launched
+# with cwd=backend/; uvicorn's --app-dir flag (used to run this app from the repo root, e.g. via
+# .claude/launch.json) changes the import path but not the cwd, which broke that assumption.
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     DATABASE_URL: str
     JWT_SECRET: str

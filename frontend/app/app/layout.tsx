@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
+import { BrandFooter } from "@/components/ui/BrandFooter";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Spinner } from "@/components/ui/LoadingState";
@@ -122,6 +123,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
         navItems={NAV_ITEMS}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
+        footer={<BrandFooter className="border-t border-border-default" />}
         header={
           <Link href="/app/dashboard" className="flex items-center gap-2 border-b border-border-default px-4 py-3.5">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-700 text-xs font-bold text-white">
@@ -149,6 +151,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           }
           right={
             <>
+              <BrandFooter variant="compact" />
               <WorkspaceStreamStatus status={dashboardStream.status} />
               <TelemetryDrawerTrigger />
               <ThemeToggle />
