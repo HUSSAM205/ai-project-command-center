@@ -11,6 +11,9 @@ import {
   ClipboardList,
   Sparkles,
   Briefcase,
+  Cpu,
+  ClipboardCheck,
+  Presentation,
 } from "lucide-react";
 
 /** Any lucide-react icon (or compatible component) — kept narrow so this file stays a plain
@@ -62,4 +65,7 @@ export const commands: Command[] = [
   { id: "nav-reports", label: "Reports", href: "/app/reports", group: "Navigate", icon: ClipboardList, keywords: ["status", "executive summary"] },
   { id: "nav-ai-assistant", label: "AI Assistant", href: "/app/ai-assistant", group: "Navigate", icon: Sparkles, keywords: ["ask", "chat", "executive brief"] },
   { id: "nav-consulting", label: "Consulting", href: "/app/consulting", group: "Navigate", icon: Briefcase, keywords: ["business case", "roi", "roadmap", "opportunities"] },
+  { id: "nav-workspace-architect", label: "Architect Workspace", href: "/app/workspace/architect", group: "Navigate", icon: Cpu, keywords: ["ai architecture", "pipeline", "telemetry", "router"] },
+  { id: "nav-workspace-pmo", label: "PMO Workspace", href: "/app/workspace/pmo", group: "Navigate", icon: ClipboardCheck, keywords: ["evm", "stage gates", "raci", "portfolio"] },
+  { id: "nav-workspace-product", label: "Executive Suite", href: "/app/workspace/product", group: "Navigate", icon: Presentation, keywords: ["boardroom", "value complexity", "trade-off", "prioritization"] },
 ];

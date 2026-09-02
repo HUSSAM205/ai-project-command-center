@@ -17,6 +17,9 @@ import {
   Briefcase,
   LogOut,
   ShieldCheck,
+  Cpu,
+  ClipboardCheck,
+  Presentation,
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
@@ -45,6 +48,12 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Consulting", href: "/app/consulting", icon: <Briefcase /> },
   { label: "Analytics", href: "/app/analytics", icon: <BarChart3 /> },
   { label: "Reports", href: "/app/reports", icon: <ClipboardList /> },
+  // Persona-oriented aggregation/overview pages — curate and link into the same real data the
+  // pages above already serve, rather than a new data source. Grouped visually last since they're
+  // dashboards-of-dashboards, not primary functional surfaces.
+  { label: "Architect Workspace", href: "/app/workspace/architect", icon: <Cpu /> },
+  { label: "PMO Workspace", href: "/app/workspace/pmo", icon: <ClipboardCheck /> },
+  { label: "Executive Suite", href: "/app/workspace/product", icon: <Presentation /> },
 ];
 
 export default function AppShellLayout({ children }: { children: React.ReactNode }) {
