@@ -14,7 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.serializers import derive_risk_severity
-from app.models.enums import RiskStatus, TaskStatus
+from app.models.consulting import BusinessCase
+from app.models.enums import RiskStatus, RoadmapPhaseType, TaskStatus
 from app.models.organization import Organization
 from app.models.project import Project
 from app.models.task import Task, TaskDependency
@@ -270,3 +271,104 @@ def build_assistant_context(
         "resources": resource_rows,
         "blocking_task": blocking_task,
     }
+
+
+def _phase_label(phase: RoadmapPhaseType) -> str:
+    return phase.value.replace("_", " ").title()
+
+
+def build_roadmap_phase_document(
+    business_case: BusinessCase, scored_opportunities: list[dict], phase: RoadmapPhaseType
+) -> dict:
+    """context for AIRouter.analyze_document — reused (not a parallel narrative-generation
+    path) to produce one transformation-roadmap phase's content: objectives, deliverables,
+    risks, and KPI suggestions (spec §37). `scored_opportunities` is a list of
+    {"name", "overall_score", "business_impact", "feasibility", "data_readiness", "cost",
+    "time_to_value", "risk"} dicts, already sorted by overall_score descending (see
+    app/services/opportunity_scoring.py + app/api/consulting.py).
+
+    The "document" text below is assembled ENTIRELY from this business case's own real intake
+    fields and real scored opportunities. analyze_document's extraction (Demo AI: keyword-
+    based sentence extraction over app/services/document_extraction.py; a live provider:
+    the same document-analysis prompt used everywhere else in the app) can only ever surface
+    what is actually written here — so the generated phase content is always grounded in this
+    specific business case, never generic filler, regardless of which provider answers.
+
+    Each sentence below is deliberately worded to land in exactly one (or, for the last
+    sentence, two) of document_extraction.py's keyword buckets:
+      - a "must ..." sentence  -> requirements bucket  -> becomes phase objectives
+      - a "will deliver ..." sentence -> deliverables bucket -> becomes phase deliverables
+      - a "risk ... may not ... jeopardize" sentence -> risks bucket -> becomes phase risks
+      - a "must complete ... next step" sentence -> action_items bucket -> becomes phase KPIs
+    """
+    label = _phase_label(phase)
+    top = scored_opportunities[0] if scored_opportunities else None
+    top_name = top["name"] if top else "the top-scored opportunity"
+    top_score = top["overall_score"] if top else "N/A"
+    top3_names = ", ".join(o["name"] for o in scored_opportunities[:3]) or "the scored opportunities"
+    all_names = ", ".join(o["name"] for o in scored_opportunities) or "the scored opportunities"
+    lowest_readiness = sorted(scored_opportunities, key=lambda o: o["data_readiness"])[:2]
+    lowest_readiness_names = ", ".join(o["name"] for o in lowest_readiness) or "the lowest-data-readiness opportunities"
+    stakeholders = business_case.stakeholders or "the sponsoring team"
+    constraints = business_case.constraints or "the stated budget and timeline"
+    timeline = business_case.timeline or "the planned"
+
+    if phase == RoadmapPhaseType.DISCOVERY:
+        sentences = [
+            f"The {label} phase must validate the business problem — {business_case.business_problem} — "
+            f"against the objectives: {business_case.objectives}.",
+            f"The team will deliver a validated opportunity backlog covering {all_names} and a discovery "
+            f"findings report comparing the current state ({business_case.current_state}) to the desired "
+            f"state ({business_case.desired_state}).",
+            f"A primary risk is that stakeholders ({stakeholders}) may not reach consensus on scope within "
+            f"the constraints of {constraints}, which could jeopardize the schedule.",
+            "As the phase's next step, the team must complete stakeholder interviews and must complete "
+            "a scope sign-off checkpoint before Data Readiness begins.",
+        ]
+    elif phase == RoadmapPhaseType.DATA_READINESS:
+        sentences = [
+            f"The {label} phase must remediate data gaps required to pursue {lowest_readiness_names}, "
+            f"in support of the objectives: {business_case.objectives}.",
+            f"The team will deliver a data readiness assessment and a remediation plan for "
+            f"{lowest_readiness_names}, provided to {stakeholders}.",
+            f"A risk is that data quality issues in {lowest_readiness_names} may not be resolved before "
+            f"the Pilot phase begins, which would delay reaching the desired state: {business_case.desired_state}.",
+            "As the phase's next step, the team must complete a data quality baseline and must complete "
+            "access provisioning as the measurable action items.",
+        ]
+    elif phase == RoadmapPhaseType.PILOT:
+        sentences = [
+            f"The {label} phase must pilot the top-scored opportunity, {top_name} (overall score "
+            f"{top_score}/100), directly against the business problem: {business_case.business_problem}.",
+            f"The team will deliver a working pilot of {top_name} and a pilot evaluation report measured "
+            f"against the desired state: {business_case.desired_state}.",
+            f"A risk is that the {top_name} pilot may not achieve the expected business impact within the "
+            f"business case's stated budget of {business_case.budget}, given the constraints: {constraints}.",
+            f"As the phase's next step, the team must complete the {top_name} pilot build and must complete "
+            "a go/no-go review as the measurable action items.",
+        ]
+    elif phase == RoadmapPhaseType.IMPLEMENTATION:
+        sentences = [
+            f"The {label} phase must scale delivery of the top opportunities — {top3_names} — into "
+            f"production, in line with the objectives: {business_case.objectives}.",
+            f"The team will deliver production-ready deployments of {top3_names} and provide an operating "
+            f"runbook to {stakeholders}.",
+            f"A risk is that cost or schedule overruns may not be contained within the business case's "
+            f"budget of {business_case.budget} while implementing {top3_names}.",
+            f"As the phase's next step, the team must complete go-live for {top3_names} and must complete "
+            f"a post-launch stabilization review within {timeline} timeline.",
+        ]
+    else:  # SCALE
+        sentences = [
+            f"The {label} phase must scale the full opportunity portfolio ({all_names}) organization-wide, "
+            f"sustaining the outcomes described in the desired state: {business_case.desired_state}.",
+            f"The team will deliver an enterprise rollout plan and a change-management playbook covering "
+            f"{all_names}, handed over to {stakeholders}.",
+            f"A risk is that adoption may not reach target levels across {stakeholders} without sustained "
+            f"change management, jeopardizing the return on the {business_case.budget} investment.",
+            "As the phase's next step, the team will complete a full-adoption rollout and must complete "
+            "a benefits-realization review as the measurable action items.",
+        ]
+
+    text = " ".join(sentences)
+    return {"filename": f"{business_case.name} — {label} phase brief", "text": text}

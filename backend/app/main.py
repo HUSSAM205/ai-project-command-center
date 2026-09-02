@@ -7,6 +7,7 @@ from app.api import (
     analytics,
     auth,
     budgets,
+    consulting,
     dashboard,
     demo,
     documents,
@@ -49,6 +50,7 @@ app.include_router(reports.router)
 app.include_router(documents.router)
 app.include_router(admin.router)
 app.include_router(feedback.router)
+app.include_router(consulting.router)
 
 
 @app.get("/health")

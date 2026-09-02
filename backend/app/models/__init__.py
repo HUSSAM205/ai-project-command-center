@@ -1,6 +1,7 @@
 from app.models.ai_request import AIRequest
 from app.models.audit_log import AuditLog
 from app.models.budget import Budget, BudgetTransaction
+from app.models.consulting import AIOpportunity, BusinessCase, RoadmapPhase
 from app.models.document import Document, DocumentChunk
 from app.models.feedback import Feedback
 from app.models.milestone import Milestone
@@ -32,4 +33,7 @@ __all__ = [
     "RolePermission",
     "AuditLog",
     "Feedback",
+    "BusinessCase",
+    "AIOpportunity",
+    "RoadmapPhase",
 ]

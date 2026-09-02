@@ -411,3 +411,79 @@ export interface FeedbackPage {
   page: number;
   page_size: number;
 }
+
+// AI Consulting Workspace (Phase 4) — mirrors backend app/schemas/consulting.py.
+export interface BusinessCase {
+  id: string;
+  organization_id: string;
+  name: string;
+  business_problem: string;
+  current_state: string;
+  desired_state: string;
+  objectives: string;
+  constraints: string | null;
+  stakeholders: string | null;
+  budget: number;
+  timeline: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface AIOpportunity {
+  id: string;
+  business_case_id: string;
+  name: string;
+  description: string | null;
+  business_impact: number;
+  feasibility: number;
+  data_readiness: number;
+  cost: number;
+  time_to_value: number;
+  risk: number;
+  overall_score: number;
+  score_breakdown: Record<string, number>;
+  created_at: string;
+}
+
+export interface ROIRequest {
+  current_cost: number;
+  implementation_cost: number;
+  expected_efficiency_gain: number;
+  annual_savings: number;
+  maintenance_cost: number;
+}
+
+export interface ROIResult extends ROIRequest {
+  business_case_id: string;
+  efficiency_savings: number;
+  annual_benefit: number;
+  net_benefit: number;
+  roi_percent: number | null;
+  payback_period_months: number | null;
+  formula: string;
+}
+
+export type RoadmapPhaseType = "DISCOVERY" | "DATA_READINESS" | "PILOT" | "IMPLEMENTATION" | "SCALE";
+
+export const ROADMAP_PHASE_ORDER: RoadmapPhaseType[] = [
+  "DISCOVERY",
+  "DATA_READINESS",
+  "PILOT",
+  "IMPLEMENTATION",
+  "SCALE",
+];
+
+export interface RoadmapPhase {
+  id: string;
+  business_case_id: string;
+  phase: RoadmapPhaseType;
+  objectives: string[];
+  deliverables: string[];
+  kpis: string[];
+  risks: string[];
+  duration_weeks: number;
+  resources: string[];
+  budget: number;
+  sequence_order: number;
+  source: AISource;
+}

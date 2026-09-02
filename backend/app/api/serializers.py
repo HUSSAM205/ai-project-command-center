@@ -1,11 +1,14 @@
+from app.models.consulting import AIOpportunity
 from app.models.enums import RiskSeverity, UtilizationState
 from app.models.project import Project
 from app.models.resource import Resource
 from app.models.risk import Risk
+from app.schemas.consulting import AIOpportunityOut
 from app.schemas.project import ProjectOut
 from app.schemas.resource import ResourceOut
 from app.schemas.risk import RiskOut
 from app.services.health_score import compute_health_score
+from app.services.opportunity_scoring import compute_opportunity_score
 
 
 def derive_risk_severity(score: int) -> RiskSeverity:
@@ -50,6 +53,32 @@ def serialize_resource(
         capacity_hours_per_week=resource.capacity_hours_per_week,
         current_workload_hours_per_week=round(workload, 2),
         utilization_state=state,
+    )
+
+
+def serialize_opportunity(opportunity: AIOpportunity) -> AIOpportunityOut:
+    result = compute_opportunity_score(
+        business_impact=opportunity.business_impact,
+        feasibility=opportunity.feasibility,
+        data_readiness=opportunity.data_readiness,
+        cost=opportunity.cost,
+        time_to_value=opportunity.time_to_value,
+        risk=opportunity.risk,
+    )
+    return AIOpportunityOut(
+        id=opportunity.id,
+        business_case_id=opportunity.business_case_id,
+        name=opportunity.name,
+        description=opportunity.description,
+        business_impact=opportunity.business_impact,
+        feasibility=opportunity.feasibility,
+        data_readiness=opportunity.data_readiness,
+        cost=opportunity.cost,
+        time_to_value=opportunity.time_to_value,
+        risk=opportunity.risk,
+        overall_score=result.overall_score,
+        score_breakdown=result.score_breakdown,
+        created_at=opportunity.created_at,
     )
 
 

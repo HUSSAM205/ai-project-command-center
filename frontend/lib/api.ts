@@ -1,6 +1,7 @@
 import type {
   AdminOrganization,
   AdminUser,
+  AIOpportunity,
   AIProviderStatus,
   AIResponse,
   AIUsage,
@@ -10,6 +11,7 @@ import type {
   AuthResponse,
   Budget,
   BudgetTransaction,
+  BusinessCase,
   CostForecast,
   DashboardSummary,
   Document,
@@ -24,6 +26,9 @@ import type {
   Resource,
   ResourceAllocation,
   Risk,
+  RoadmapPhase,
+  ROIRequest,
+  ROIResult,
   Task,
   User,
 } from "./types";
@@ -247,6 +252,33 @@ export const api = {
       q.set("page_size", String(params.pageSize ?? 25));
       return request<FeedbackPage>(`/admin/feedback?${q.toString()}`);
     },
+  },
+
+  // AI Consulting Workspace (Phase 4)
+  consulting: {
+    businessCases: () => request<BusinessCase[]>("/consulting/business-cases"),
+    businessCase: (id: string) => request<BusinessCase>(`/consulting/business-cases/${id}`),
+    createBusinessCase: (payload: Partial<BusinessCase>) =>
+      request<BusinessCase>("/consulting/business-cases", { method: "POST", body: payload }),
+    updateBusinessCase: (id: string, payload: Partial<BusinessCase>) =>
+      request<BusinessCase>(`/consulting/business-cases/${id}`, { method: "PATCH", body: payload }),
+    deleteBusinessCase: (id: string) => request<void>(`/consulting/business-cases/${id}`, { method: "DELETE" }),
+
+    opportunities: (businessCaseId: string) =>
+      request<AIOpportunity[]>(`/consulting/business-cases/${businessCaseId}/opportunities`),
+    createOpportunity: (businessCaseId: string, payload: Partial<AIOpportunity>) =>
+      request<AIOpportunity>(`/consulting/business-cases/${businessCaseId}/opportunities`, {
+        method: "POST",
+        body: payload,
+      }),
+
+    calculateRoi: (businessCaseId: string, payload: ROIRequest) =>
+      request<ROIResult>(`/consulting/business-cases/${businessCaseId}/roi`, { method: "POST", body: payload }),
+
+    roadmap: (businessCaseId: string) =>
+      request<RoadmapPhase[]>(`/consulting/business-cases/${businessCaseId}/roadmap`),
+    generateRoadmap: (businessCaseId: string) =>
+      request<RoadmapPhase[]>(`/consulting/business-cases/${businessCaseId}/roadmap`, { method: "POST" }),
   },
 };
 

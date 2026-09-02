@@ -80,3 +80,14 @@ class DocumentStatus(str, enum.Enum):
     PROCESSING = "PROCESSING"
     READY = "READY"
     FAILED = "FAILED"
+
+
+class RoadmapPhaseType(str, enum.Enum):
+    """Fixed 5-phase order for the AI Consulting Workspace's transformation roadmap
+    (Phase 4, spec §37) — see app/services/transformation_roadmap.py."""
+
+    DISCOVERY = "DISCOVERY"
+    DATA_READINESS = "DATA_READINESS"
+    PILOT = "PILOT"
+    IMPLEMENTATION = "IMPLEMENTATION"
+    SCALE = "SCALE"

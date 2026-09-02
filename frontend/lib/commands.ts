@@ -10,6 +10,7 @@ import {
   BarChart3,
   ClipboardList,
   Sparkles,
+  Briefcase,
 } from "lucide-react";
 
 /** Any lucide-react icon (or compatible component) — kept narrow so this file stays a plain
@@ -60,4 +61,5 @@ export const commands: Command[] = [
   { id: "nav-analytics", label: "Analytics", href: "/app/analytics", group: "Navigate", icon: BarChart3, keywords: ["trends", "charts"] },
   { id: "nav-reports", label: "Reports", href: "/app/reports", group: "Navigate", icon: ClipboardList, keywords: ["status", "executive summary"] },
   { id: "nav-ai-assistant", label: "AI Assistant", href: "/app/ai-assistant", group: "Navigate", icon: Sparkles, keywords: ["ask", "chat", "executive brief"] },
+  { id: "nav-consulting", label: "Consulting", href: "/app/consulting", group: "Navigate", icon: Briefcase, keywords: ["business case", "roi", "roadmap", "opportunities"] },
 ];
