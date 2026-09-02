@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Bar,
   BarChart,
@@ -29,10 +29,17 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
-import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, SOLID_COLORS } from "@/components/ui/Badge";
+import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, QuickSummaryBadge, SOLID_COLORS } from "@/components/ui/Badge";
 import { RiskRadar } from "@/components/viz/RiskRadar";
+import { buildLocalExecutiveBrief } from "@/lib/localExecutiveBrief";
 import { formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
-import { cardHover, staggerContainer, staggerItem } from "@/lib/motion";
+import { cardHover, crossFade, staggerContainer, staggerItem } from "@/lib/motion";
+
+/** How long the real GET /api/v1/ai/executive-brief call gets before the honestly-labeled local
+ * fallback (lib/localExecutiveBrief.ts) takes over the display. If the real response lands after
+ * this, the swap already happened — arriving data still replaces the fallback via the crossfade
+ * below, it just means the fallback was visible first. */
+const EXECUTIVE_BRIEF_FALLBACK_DELAY_MS = 1000;
 
 const SEVERITY_COLORS: Record<string, string> = {
   LOW: SOLID_COLORS[riskLevelTone("LOW")],
@@ -61,6 +68,34 @@ export default function DashboardPage() {
     if (!projects.data) return [];
     return [...projects.data].sort((a, b) => a.health_score - b.health_score).slice(0, 6);
   }, [projects.data]);
+
+  // Executive Brief resilient fallback (Task 1): the real GET /api/v1/ai/executive-brief call is
+  // the only AI-touching request on this page, and the only one that can be slow (rate-limit +
+  // cache Redis round trips) or occasionally 502. `brief.loading` starts true and flips to false
+  // once the call settles (success or failure) — this timer fires the fallback only if it's *still*
+  // loading ~1s in; it's cleared/restarted whenever `brief.loading` toggles (mount, or a manual
+  // `brief.reload()`), so a fast real response never shows the fallback at all.
+  const [briefFallbackDue, setBriefFallbackDue] = useState(false);
+  useEffect(() => {
+    // Nothing to reset when loading ends: `showBriefFallback` below is also gated on `!brief.data`,
+    // so once the real response lands this flag simply stops mattering — no need to flip it back to
+    // false (which would mean calling setState synchronously from the effect body on every render
+    // where loading is already false, rather than only from this timer's own callback).
+    if (!brief.loading) return;
+    const timer = setTimeout(() => setBriefFallbackDue(true), EXECUTIVE_BRIEF_FALLBACK_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [brief.loading]);
+
+  // Grounded purely in data this page already fetched for other cards (GET /dashboard,
+  // GET /projects) — see lib/localExecutiveBrief.ts. Recomputed only when that real data changes.
+  const localBrief = useMemo(
+    () => (dashboard.data ? buildLocalExecutiveBrief(dashboard.data, projects.data ?? []) : null),
+    [dashboard.data, projects.data],
+  );
+
+  // Show the fallback once it's due AND slow, OR immediately on an outright failure — either way,
+  // never a red error box for this card (the "zero visible failure state" goal from the brief).
+  const showBriefFallback = !brief.data && (briefFallbackDue || !!brief.error) && !!localBrief;
 
   const financialData = useMemo(() => {
     if (!projects.data) return [];
@@ -165,20 +200,44 @@ export default function DashboardPage() {
             <CardDescription>AI-generated portfolio summary, grounded in your actual data</CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            {brief.data && <AISourceBadge source={brief.data.source} />}
+            {brief.data ? <AISourceBadge source={brief.data.source} /> : showBriefFallback ? <QuickSummaryBadge /> : null}
             <Link href="/app/ai-assistant" className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
               Ask a question
             </Link>
           </div>
         </CardHeader>
         <CardContent>
-          {brief.loading && <div className="h-16 animate-pulse rounded-md bg-subtle" />}
-          {brief.error && (
-            <ErrorState description={brief.error.message} offline={brief.error.message?.includes("offline")} onRetry={brief.reload} />
-          )}
-          {brief.data && (
-            <p className="whitespace-pre-line text-sm leading-relaxed text-text-secondary">{brief.data.detail ?? brief.data.summary}</p>
-          )}
+          {/* Never a spinner-forever or a red error box here: the real AI response wins whenever it
+              arrives, the local fallback (lib/localExecutiveBrief.ts) covers slow (~1s+) or failed
+              calls, and a genuinely late real response crossfades in over the fallback rather than
+              snapping — respects prefers-reduced-motion globally via <MotionConfig> in app/layout.tsx. */}
+          <AnimatePresence mode="wait" initial={false}>
+            {brief.data ? (
+              <motion.p
+                key="real"
+                variants={crossFade}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="whitespace-pre-line text-sm leading-relaxed text-text-secondary"
+              >
+                {brief.data.detail ?? brief.data.summary}
+              </motion.p>
+            ) : showBriefFallback && localBrief ? (
+              <motion.p
+                key="fallback"
+                variants={crossFade}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="whitespace-pre-line text-sm leading-relaxed text-text-secondary"
+              >
+                {localBrief.detail}
+              </motion.p>
+            ) : (
+              <motion.div key="loading" variants={crossFade} initial="initial" animate="animate" exit="exit" className="h-16 animate-pulse rounded-md bg-subtle" />
+            )}
+          </AnimatePresence>
         </CardContent>
       </MotionCard>
 

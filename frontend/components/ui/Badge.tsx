@@ -1,5 +1,5 @@
 import { type HTMLAttributes } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AISource } from "@/lib/types";
 
@@ -145,6 +145,19 @@ export function AISourceBadge({ source, className }: { source: AISource; classNa
     <Badge tone={aiSourceTone(source)} className={className}>
       <Sparkles className="h-3 w-3" aria-hidden="true" />
       {AI_SOURCE_LABEL[source]}
+    </Badge>
+  );
+}
+
+/** Visually related to `AISourceBadge` (same pill shape, same corner of the card) but
+ * deliberately a different icon/label/tone — this labels a locally-computed, non-AI fallback
+ * (see lib/localExecutiveBrief.ts), and must never be confused with a real `AISource` value like
+ * `demo_ai`/`gemini`/`groq`/`cache`. Zap (not Sparkles) is the visual tell it's not an AI response. */
+export function QuickSummaryBadge({ className }: { className?: string }) {
+  return (
+    <Badge tone="neutral" className={className}>
+      <Zap className="h-3 w-3" aria-hidden="true" />
+      Quick summary
     </Badge>
   );
 }

@@ -47,7 +47,15 @@ export function DataTable<T>({
       return 0;
     });
     return copy;
-  }, [rows, sort, columns]);
+    // `columns` intentionally excluded: several call sites across the app rebuild their `columns`
+    // array (new array + new render/sortValue closures) on every render without memoizing it, which
+    // defeated this memo every single time it ran — re-sorting on any unrelated parent re-render,
+    // not just on an actual `rows`/`sort` change. The column *definitions* a given DataTable is
+    // rendered with don't change across a component's lifetime, only their identity does, so reading
+    // the latest `columns` from the closure (rather than the dep array) is safe and keeps this memo
+    // doing what it says: recompute only when the sortable data or the sort itself actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, sort]);
 
   function toggleSort(col: Column<T>) {
     if (!col.sortValue) return;

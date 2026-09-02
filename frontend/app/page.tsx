@@ -64,10 +64,15 @@ function SiteHeader() {
           <a href="#intelligence" className="hover:text-text-primary transition-colors">Intelligence</a>
           <a href="#security" className="hover:text-text-primary transition-colors">Security</a>
         </nav>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <ThemeToggle />
-          <LinkButton href="/login" variant="ghost" size="sm">Sign in</LinkButton>
-          <LinkButton href="/demo" size="sm">Explore Live Demo</LinkButton>
+          {/* Zero-friction path is the obvious default: one dominant CTA. "Sign in" stays genuinely
+              reachable — same href, same click target — just sized and weighted as the secondary,
+              not-competing option, rather than a second button of equal visual weight. */}
+          <Link href="/login" className="text-sm font-medium text-text-tertiary transition-colors hover:text-text-primary">
+            Sign in
+          </Link>
+          <LinkButton href="/demo" size="sm">Enter Command Center</LinkButton>
         </div>
       </div>
     </header>

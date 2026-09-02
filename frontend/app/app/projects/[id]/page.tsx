@@ -57,6 +57,56 @@ import { STAGE_GATE_ORDER } from "@/lib/types";
 type TeamRow = ResourceAllocation & { resource?: Resource };
 type BudgetData = { budget: Budget; transactions: BudgetTransaction[]; actual_cost: number };
 
+// Hoisted to module scope (same pattern as NAV_ITEMS in app/app/layout.tsx): these don't close over
+// any component state, so defining them inline in the component body just recreated a fresh array +
+// fresh render/sortValue closures on every render — including on state changes unrelated to these
+// tabs (any of this page's ~9 independent useApi hooks resolving). That broke DataTable's internal
+// `sorted` useMemo (it depended on `columns` by reference) every single time, forcing a pointless
+// re-sort. Module scope makes the reference stable for real, on top of the DataTable-level fix below.
+const taskColumns: Column<Task>[] = [
+  { key: "title", header: "Task", sortValue: (t) => t.title, render: (t) => <span className="font-medium text-text-primary">{t.title}</span> },
+  { key: "status", header: "Status", sortValue: (t) => t.status, render: (t) => <Badge tone={taskStatusTone(t.status)}>{titleCase(t.status)}</Badge> },
+  { key: "priority", header: "Priority", sortValue: (t) => t.priority, render: (t) => <Badge tone={priorityTone(t.priority)}>{titleCase(t.priority)}</Badge> },
+  { key: "assignee", header: "Assignee", render: (t) => t.assignee_name ?? <span className="text-text-tertiary">Unassigned</span> },
+  { key: "due", header: "Due", align: "right", sortValue: (t) => t.due_date ?? "", render: (t) => <span className="font-tabular">{formatDate(t.due_date)}</span> },
+  {
+    key: "completion",
+    header: "Progress",
+    align: "right",
+    sortValue: (t) => t.completion_percentage,
+    render: (t) => <span className="font-tabular">{t.completion_percentage}%</span>,
+  },
+];
+
+const riskColumns: Column<Risk>[] = [
+  { key: "title", header: "Risk", sortValue: (r) => r.title, render: (r) => <span className="font-medium text-text-primary">{r.title}</span> },
+  { key: "category", header: "Category", sortValue: (r) => r.category, render: (r) => titleCase(r.category) },
+  { key: "score", header: "Score", align: "right", sortValue: (r) => r.score, render: (r) => <span className="font-tabular">{r.probability} × {r.impact} = {r.score}</span> },
+  { key: "severity", header: "Severity", sortValue: (r) => r.score, render: (r) => <Badge tone={riskLevelTone(r.severity)}>{r.severity}</Badge> },
+  { key: "owner", header: "Owner", render: (r) => r.owner ?? "—" },
+  { key: "status", header: "Status", sortValue: (r) => r.status, render: (r) => titleCase(r.status) },
+];
+
+const teamColumns: Column<TeamRow>[] = [
+  {
+    key: "name",
+    header: "Resource",
+    render: (a) => (
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700 dark:bg-brand-800 dark:text-brand-200">
+          {initials(a.resource?.name)}
+        </span>
+        <div>
+          <p className="font-medium text-text-primary">{a.resource?.name ?? "—"}</p>
+          <p className="text-xs text-text-tertiary">{a.resource?.role}</p>
+        </div>
+      </div>
+    ),
+  },
+  { key: "allocation", header: "Allocation", align: "right", sortValue: (a) => a.allocation_percent, render: (a) => <span className="font-tabular">{a.allocation_percent}%</span> },
+  { key: "dates", header: "Period", align: "right", render: (a) => <span className="font-tabular">{formatDate(a.start_date)} – {formatDate(a.end_date)}</span> },
+];
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
@@ -69,6 +119,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const budget = useApi(() => api.budget(id), [id]);
   const allocations = useApi(() => api.allocations(id), [id]);
   const resources = useApi(() => api.resources(), []);
+  // PMO engines (Task 3 perf fix): these used to be fetched inside PMOTab itself, which only mounts
+  // while the "pmo" tab is active — `Tabs` fully unmounts inactive tab content (see components/ui/
+  // Tabs.tsx's AnimatePresence), so every trip away from and back to the PMO tab re-issued all four
+  // of these requests even though nothing had changed. Fetching them here, alongside every other tab's
+  // data (tasks/milestones/risks/health/... above), fetches each once per project visit and keeps it
+  // cached across tab switches — matching how every other tab on this page already behaves.
+  const evm = useApi(() => pmoApi.evm(id), [id]);
+  const raci = useApi(() => pmoApi.raci(id), [id]);
+  const stageGates = useApi(() => pmoApi.stageGates(id), [id]);
+  const contractLedger = useApi(() => pmoApi.contractLedger(id), [id]);
 
   const team = useMemo<TeamRow[]>(() => {
     if (!allocations.data || !resources.data) return [];
@@ -118,50 +178,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   const p = project.data;
-
-  const taskColumns: Column<Task>[] = [
-    { key: "title", header: "Task", sortValue: (t) => t.title, render: (t) => <span className="font-medium text-text-primary">{t.title}</span> },
-    { key: "status", header: "Status", sortValue: (t) => t.status, render: (t) => <Badge tone={taskStatusTone(t.status)}>{titleCase(t.status)}</Badge> },
-    { key: "priority", header: "Priority", sortValue: (t) => t.priority, render: (t) => <Badge tone={priorityTone(t.priority)}>{titleCase(t.priority)}</Badge> },
-    { key: "assignee", header: "Assignee", render: (t) => t.assignee_name ?? <span className="text-text-tertiary">Unassigned</span> },
-    { key: "due", header: "Due", align: "right", sortValue: (t) => t.due_date ?? "", render: (t) => <span className="font-tabular">{formatDate(t.due_date)}</span> },
-    {
-      key: "completion",
-      header: "Progress",
-      align: "right",
-      sortValue: (t) => t.completion_percentage,
-      render: (t) => <span className="font-tabular">{t.completion_percentage}%</span>,
-    },
-  ];
-
-  const riskColumns: Column<Risk>[] = [
-    { key: "title", header: "Risk", sortValue: (r) => r.title, render: (r) => <span className="font-medium text-text-primary">{r.title}</span> },
-    { key: "category", header: "Category", sortValue: (r) => r.category, render: (r) => titleCase(r.category) },
-    { key: "score", header: "Score", align: "right", sortValue: (r) => r.score, render: (r) => <span className="font-tabular">{r.probability} × {r.impact} = {r.score}</span> },
-    { key: "severity", header: "Severity", sortValue: (r) => r.score, render: (r) => <Badge tone={riskLevelTone(r.severity)}>{r.severity}</Badge> },
-    { key: "owner", header: "Owner", render: (r) => r.owner ?? "—" },
-    { key: "status", header: "Status", sortValue: (r) => r.status, render: (r) => titleCase(r.status) },
-  ];
-
-  const teamColumns: Column<TeamRow>[] = [
-    {
-      key: "name",
-      header: "Resource",
-      render: (a) => (
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700 dark:bg-brand-800 dark:text-brand-200">
-            {initials(a.resource?.name)}
-          </span>
-          <div>
-            <p className="font-medium text-text-primary">{a.resource?.name ?? "—"}</p>
-            <p className="text-xs text-text-tertiary">{a.resource?.role}</p>
-          </div>
-        </div>
-      ),
-    },
-    { key: "allocation", header: "Allocation", align: "right", sortValue: (a) => a.allocation_percent, render: (a) => <span className="font-tabular">{a.allocation_percent}%</span> },
-    { key: "dates", header: "Period", align: "right", render: (a) => <span className="font-tabular">{formatDate(a.start_date)} – {formatDate(a.end_date)}</span> },
-  ];
 
   return (
     <div className="space-y-6">
@@ -258,7 +274,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           {
             id: "pmo",
             label: "PMO",
-            content: <PMOTab projectId={id} projectName={p.name} autoAction={pmoAutoAction} />,
+            content: (
+              <PMOTab
+                projectId={id}
+                projectName={p.name}
+                autoAction={pmoAutoAction}
+                evm={evm}
+                raci={raci}
+                stageGates={stageGates}
+                contractLedger={contractLedger}
+                tasks={tasks}
+              />
+            ),
           },
         ]}
       />
@@ -581,25 +608,36 @@ function BudgetTrendChart({
 
 /**
  * Advanced PMO engines: EVM, RACI matrix, stage gates, contract ledger / margin leakage, and
- * the boardroom memo generator (backend app/api/pmo.py). Each sub-panel fetches independently
+ * the boardroom memo generator (backend app/api/pmo.py). Each sub-panel renders independently
  * so one slow/erroring engine never blocks the others. EVM/contract-ledger numbers are shown
  * with `font-tabular`, matching this app's existing "monospaced executive readout" convention
  * (see the Cost Forecast card above and frontend/app/globals.css's font-tabular usage).
+ *
+ * `evm`/`raci`/`stageGates`/`contractLedger`/`tasks` are fetched by the parent (ProjectDetailPage),
+ * not here (Task 3 perf fix) — this tab's content is unmounted whenever the user switches to another
+ * tab (see components/ui/Tabs.tsx), so fetching them locally meant every return trip to this tab
+ * re-issued all four PMO requests. Sourcing them from the parent, which fetches once per project
+ * visit alongside every other tab's data, keeps this tab's data cached across tab switches.
  */
 function PMOTab({
   projectId,
   projectName,
   autoAction,
+  evm,
+  raci,
+  stageGates,
+  contractLedger,
+  tasks,
 }: {
   projectId: string;
   projectName: string;
   autoAction?: { action: PmoCommandDetail["action"]; nonce: number } | null;
+  evm: ReturnType<typeof useApi<EVM>>;
+  raci: ReturnType<typeof useApi<RaciEntry[]>>;
+  stageGates: ReturnType<typeof useApi<StageGate[]>>;
+  contractLedger: ReturnType<typeof useApi<ContractLedger>>;
+  tasks: ReturnType<typeof useApi<Task[]>>;
 }) {
-  const evm = useApi(() => pmoApi.evm(projectId), [projectId]);
-  const raci = useApi(() => pmoApi.raci(projectId), [projectId]);
-  const stageGates = useApi(() => pmoApi.stageGates(projectId), [projectId]);
-  const contractLedger = useApi(() => pmoApi.contractLedger(projectId), [projectId]);
-
   const memoTrigger = autoAction?.action === "memo" ? autoAction.nonce : null;
   const monteCarloTrigger = autoAction?.action === "montecarlo" ? autoAction.nonce : null;
 
@@ -611,7 +649,13 @@ function PMOTab({
         <StageGatesCard loading={stageGates.loading} error={stageGates.error} data={stageGates.data} onRetry={stageGates.reload} />
       </div>
       <RaciCard loading={raci.loading} error={raci.error} data={raci.data} onRetry={raci.reload} />
-      <MonteCarloCard projectId={projectId} autoRunTrigger={monteCarloTrigger} />
+      <MonteCarloCard
+        tasksData={tasks.data}
+        tasksLoading={tasks.loading}
+        tasksError={tasks.error}
+        onRetryTasks={tasks.reload}
+        autoRunTrigger={monteCarloTrigger}
+      />
       <BoardroomMemoCard projectId={projectId} projectName={projectName} autoGenerateTrigger={memoTrigger} />
     </div>
   );
@@ -1039,19 +1083,36 @@ function hoursToCompletionDate(hours: number): string {
   return d.toISOString();
 }
 
-function MonteCarloCard({ projectId, autoRunTrigger }: { projectId: string; autoRunTrigger?: number | null }) {
-  const tasksApi = useApi(() => api.tasks(projectId), [projectId]);
+/**
+ * `tasksData`/`tasksLoading`/`tasksError`/`onRetryTasks` come from the parent's already-fetched
+ * `tasks` useApi call (Task 3 perf fix) — this card used to run its own independent
+ * `api.tasks(projectId)` fetch, duplicating the exact same request the Tasks/Timeline tabs already
+ * make at the top of ProjectDetailPage. Reusing that single fetch avoids a redundant network round
+ * trip every time this card mounts (i.e. every time the user visits the PMO tab).
+ */
+function MonteCarloCard({
+  tasksData,
+  tasksLoading,
+  tasksError,
+  onRetryTasks,
+  autoRunTrigger,
+}: {
+  tasksData: Task[] | null;
+  tasksLoading: boolean;
+  tasksError: Error | null;
+  onRetryTasks: () => void;
+  autoRunTrigger?: number | null;
+}) {
   const [result, setResult] = useState<MonteCarloResult | null>(null);
   const [running, setRunning] = useState(false);
 
   function run() {
-    const tasks = tasksApi.data;
-    if (!tasks || tasks.length === 0) return;
+    if (!tasksData || tasksData.length === 0) return;
     setRunning(true);
     // Yield a frame so the "Running…" state actually paints before the (synchronous, but real)
     // 1,000-iteration simulation blocks the main thread for its (sub-second) duration.
     requestAnimationFrame(() => {
-      const r = runMonteCarloSimulation(tasks);
+      const r = runMonteCarloSimulation(tasksData);
       setResult(r);
       setRunning(false);
     });
@@ -1060,12 +1121,12 @@ function MonteCarloCard({ projectId, autoRunTrigger }: { projectId: string; auto
   const lastTrigger = useRef<number | null>(null);
   useEffect(() => {
     if (autoRunTrigger == null || autoRunTrigger === lastTrigger.current) return;
-    if (tasksApi.loading) return; // will simply not re-fire once tasks load; a manual click still works
+    if (tasksLoading) return; // will simply not re-fire once tasks load; a manual click still works
     lastTrigger.current = autoRunTrigger;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- run() flips "Running…" before its real work, same as a manual button click; the command-bar trigger just automates that click
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRunTrigger, tasksApi.loading]);
+  }, [autoRunTrigger, tasksLoading]);
 
   const chartData = useMemo(
     () => (result ? result.histogram.map((b) => ({ day: Math.round(b.bucketStartDays), count: b.count })) : []),
@@ -1085,22 +1146,22 @@ function MonteCarloCard({ projectId, autoRunTrigger }: { projectId: string; auto
             illustrative model, not a precise forecast (see assumptions below).
           </CardDescription>
         </div>
-        <Button onClick={run} loading={running} disabled={running || tasksApi.loading || (tasksApi.data ?? []).length === 0} size="sm">
+        <Button onClick={run} loading={running} disabled={running || tasksLoading || (tasksData ?? []).length === 0} size="sm">
           <Dices className="h-4 w-4" aria-hidden="true" />
           Run Simulation
         </Button>
       </CardHeader>
       <CardContent>
-        {tasksApi.error ? (
-          <ErrorState description={tasksApi.error.message} onRetry={tasksApi.reload} />
-        ) : tasksApi.loading ? (
+        {tasksError ? (
+          <ErrorState description={tasksError.message} onRetry={onRetryTasks} />
+        ) : tasksLoading ? (
           <Spinner />
-        ) : (tasksApi.data ?? []).length === 0 ? (
+        ) : (tasksData ?? []).length === 0 ? (
           <EmptyState title="No tasks to simulate" description="This project has no tasks yet, so there's nothing to run a timeline simulation over." />
         ) : !result ? (
           <EmptyState
             title="No simulation run yet"
-            description={`Click Run Simulation to sample ${MC_ITERATIONS.toLocaleString()} possible timelines from this project's ${(tasksApi.data ?? []).length} real tasks.`}
+            description={`Click Run Simulation to sample ${MC_ITERATIONS.toLocaleString()} possible timelines from this project's ${(tasksData ?? []).length} real tasks.`}
           />
         ) : (
           <div className="space-y-5">

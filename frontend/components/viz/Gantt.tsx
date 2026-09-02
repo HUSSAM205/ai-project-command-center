@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, titleCase } from "@/lib/utils";
 import type { Milestone, Task } from "@/lib/types";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -178,14 +178,27 @@ export function Gantt({ tasks, milestones }: { tasks: Task[]; milestones: Milest
                       style={{ left, width }}
                     >
                       <div className={cn("absolute inset-0", statusBarClass[t.status] ?? "bg-neutral-300", "opacity-30")} />
+                      {/* Progress fill: the status color still carries all the meaning (no new hues) —
+                          a low-opacity white→black sheen on top just gives the fill some depth instead
+                          of reading as a flat block, same restrained "less flat" treatment as the
+                          Cost Trend / Analytics area charts elsewhere in this app. */}
                       <div
-                        className={cn("absolute left-0 top-0 h-full", statusBarClass[t.status] ?? "bg-neutral-400")}
+                        className={cn("absolute left-0 top-0 h-full overflow-hidden", statusBarClass[t.status] ?? "bg-neutral-400")}
                         style={{ width: `${Math.min(100, t.completion_percentage)}%` }}
-                      />
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-white/0 to-black/10 dark:from-white/15 dark:to-black/20" aria-hidden="true" />
+                      </div>
                       {hovered === t.id && (
-                        <div className="absolute -top-9 left-0 z-20 whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-[11px] text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900">
-                          {t.title} · {formatDate(t.start_date)}–{formatDate(t.due_date)} · {t.completion_percentage}%
-                          {isDelayed && " · Delayed"}
+                        <div
+                          role="tooltip"
+                          className="absolute -top-9 left-0 z-20 min-w-max whitespace-nowrap rounded-md bg-neutral-900 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900"
+                        >
+                          <p className="font-semibold">{t.title}</p>
+                          <p className="text-neutral-300 dark:text-neutral-600">
+                            {formatDate(t.start_date)}–{formatDate(t.due_date)} · {t.completion_percentage}%
+                            {t.assignee_name ? ` · ${t.assignee_name}` : ""}
+                            {isDelayed && " · Delayed"}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -206,13 +219,26 @@ export function Gantt({ tasks, milestones }: { tasks: Task[]; milestones: Milest
                     const tone =
                       m.status === "COMPLETED" ? "text-success-solid" : m.status === "AT_RISK" ? "text-critical-solid" : "text-brand-600 dark:text-brand-300";
                     return (
-                      <Tooltip key={m.id} content={`${m.name} · ${formatDate(m.due_date)} · ${m.status}`}>
+                      <Tooltip
+                        key={m.id}
+                        content={
+                          <span className="flex flex-col gap-0.5">
+                            <span className="font-semibold">{m.name}</span>
+                            <span className="text-neutral-300 dark:text-neutral-600">
+                              {formatDate(m.due_date)} · {titleCase(m.status)}
+                            </span>
+                          </span>
+                        }
+                      >
                         <span
-                          className={cn("absolute top-1/2 -translate-x-1/2 -translate-y-1/2", tone)}
+                          className={cn("absolute top-1/2 -translate-x-1/2 -translate-y-1/2 drop-shadow-sm transition-transform hover:scale-110", tone)}
                           style={{ left: x }}
                         >
-                          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                            <path d="M7 0 L14 7 L7 14 L0 7 Z" fill="currentColor" />
+                          {/* Clear diamond milestone marker — sized up from the legend's 14px glyph and
+                              given a thin surface-colored outline so it reads distinctly from the task
+                              bars behind it (no new hues, no glow — a plain drop-shadow for depth only). */}
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M8 0 L16 8 L8 16 L0 8 Z" fill="currentColor" stroke="var(--bg-surface)" strokeWidth="1" strokeLinejoin="round" />
                           </svg>
                         </span>
                       </Tooltip>

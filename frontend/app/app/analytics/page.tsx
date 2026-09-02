@@ -6,8 +6,8 @@ import {
   AreaChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -183,9 +183,19 @@ export default function AnalyticsPage() {
               <div className="h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
+                    <defs>
+                      {/* Per-severity radial gradient (center full-strength, edge softened) instead of
+                          a flat fill — same severity color throughout, no new hues, just depth. */}
+                      {severityEntries.map(([k]) => (
+                        <radialGradient key={k} id={`risk-severity-${k}`} cx="35%" cy="35%" r="75%">
+                          <stop offset="0%" stopColor={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} stopOpacity={1} />
+                          <stop offset="100%" stopColor={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} stopOpacity={0.72} />
+                        </radialGradient>
+                      ))}
+                    </defs>
                     <Pie data={severityEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={38} outerRadius={60} paddingAngle={2}>
                       {severityEntries.map(([k]) => (
-                        <Cell key={k} fill={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} />
+                        <Cell key={k} fill={`url(#risk-severity-${k})`} />
                       ))}
                     </Pie>
                     <RTooltip contentStyle={tooltipStyle} />
@@ -231,14 +241,23 @@ export default function AnalyticsPage() {
           ) : (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={d.task_completion_trend} margin={{ left: 0, right: 8 }}>
+                {/* Same rationale as BudgetTrendChart in the project detail page: "Completed" is the
+                    genuinely cumulative-to-date series and earns the gradient-area treatment; "Due"
+                    stays a flat dashed reference line rather than competing for the same visual weight. */}
+                <ComposedChart data={d.task_completion_trend} margin={{ left: 0, right: 8 }}>
+                  <defs>
+                    <linearGradient id="taskCompletedFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--success-solid)" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="var(--success-solid)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} />
                   <XAxis dataKey="period" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={{ stroke: "var(--border-default)" }} tickLine={false} minTickGap={16} />
                   <YAxis tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={false} tickLine={false} width={32} allowDecimals={false} />
                   <RTooltip contentStyle={tooltipStyle} />
-                  <Line type="monotone" dataKey="tasks_due_cumulative" name="Due" stroke="var(--neutral-400)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="tasks_completed_cumulative" name="Completed" stroke="var(--success-solid)" strokeWidth={2} dot={false} />
-                </LineChart>
+                  <Line type="monotone" dataKey="tasks_due_cumulative" name="Due" stroke="var(--neutral-400)" strokeDasharray="4 4" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="tasks_completed_cumulative" name="Completed" stroke="var(--success-solid)" fill="url(#taskCompletedFill)" strokeWidth={2} dot={false} />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
