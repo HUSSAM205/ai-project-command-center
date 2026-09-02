@@ -26,13 +26,38 @@ export interface Command {
   id: string;
   /** Text shown in the palette and matched against search input. */
   label: string;
-  /** Route the command navigates to. */
-  href: string;
+  /** Route the command navigates to. Omit for an action command (provide `onSelect` instead). */
+  href?: string;
+  /** Runs a real side effect instead of navigating — e.g. triggering a live action on the page
+   * the user is already on. Optional and backward-compatible: every pre-existing nav-only command
+   * keeps working unchanged since it only ever set `href`. CommandBar.tsx calls `onSelect` when
+   * present and falls back to `router.push(href)` otherwise, so a command needs exactly one of
+   * the two, never both. */
+  onSelect?: () => void;
   /** Section heading the command is grouped under in the palette (e.g. "Navigate"). */
   group: string;
   icon: CommandIcon;
   /** Extra search terms matched but not displayed (synonyms, abbreviations). */
   keywords?: string[];
+}
+
+/** Custom DOM event PMO action commands dispatch (see CommandBar.tsx's context-aware "Actions"
+ * group, added only while the user is already on a project detail page). Named/typed here, not
+ * inlined as string literals at each call site, so the dispatcher (CommandBar.tsx) and the
+ * listener (app/app/projects/[id]/page.tsx's PMOTab) can never drift out of sync on the event
+ * name or payload shape. Dispatched rather than routed through props because the command bar is
+ * mounted once at the app-shell level (app/app/layout.tsx) and has no direct reference to the
+ * mounted project page's component state — the same "decoupled via a plain DOM event" pattern
+ * CommandBar.tsx's own OPEN_EVENT already uses to talk to its trigger button. */
+export const PMO_COMMAND_EVENT = "aipcc:pmo-command";
+
+export interface PmoCommandDetail {
+  projectId: string;
+  action: "memo" | "montecarlo";
+}
+
+export function dispatchPmoCommand(projectId: string, action: PmoCommandDetail["action"]) {
+  window.dispatchEvent(new CustomEvent<PmoCommandDetail>(PMO_COMMAND_EVENT, { detail: { projectId, action } }));
 }
 
 /**

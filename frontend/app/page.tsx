@@ -57,7 +57,7 @@ function SiteHeader() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-8">
         <Link href="/" className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-700 text-xs font-bold text-white">AC</span>
-          <span className="text-sm font-semibold text-text-primary">AI Project Command Center</span>
+          <span className="text-sm font-semibold text-text-primary">AI Project Management System</span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-text-secondary md:flex">
           <a href="#platform" className="hover:text-text-primary transition-colors">Platform</a>
@@ -85,7 +85,7 @@ function Hero() {
         <Reveal className="max-w-2xl">
           <Badge tone="neutral" className="mb-5">Phase 1 · Deterministic Project Intelligence</Badge>
           <h1 className="text-4xl font-semibold tracking-tight text-text-primary md:text-5xl">
-            AI Project Command Center
+            AI Project Management System
           </h1>
           <p className="mt-4 text-lg text-text-secondary md:text-xl">
             AI-Powered Project Management &amp; Decision Intelligence Platform
@@ -367,7 +367,7 @@ function FinalCta() {
 function SiteFooter() {
   return (
     <footer className="px-4 py-10 text-center text-xs text-text-tertiary md:px-8">
-      <p>AI Project Command Center — Phase 1</p>
+      <p>AI Project Management System — Phase 1</p>
     </footer>
   );
 }

@@ -14,6 +14,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { AISourceBadge } from "@/components/ui/Badge";
+import { TypewriterText } from "@/components/ui/TypewriterText";
 import { cn, formatDate, titleCase } from "@/lib/utils";
 
 export default function ReportsPage() {
@@ -25,6 +26,9 @@ export default function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  // Only a freshly-generated report plays the typewriter reveal (Task 4) — an unrelated re-render
+  // (e.g. pdfLoading toggling) must not replay it over the same already-displayed text.
+  const [justGenerated, setJustGenerated] = useState(false);
 
   async function generate() {
     setLoading(true);
@@ -32,6 +36,7 @@ export default function ReportsPage() {
     try {
       const result = await api.report(reportType, projectId || undefined);
       setReport(result);
+      setJustGenerated(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to generate the report.");
       setReport(null);
@@ -159,8 +164,9 @@ export default function ReportsPage() {
       {error && <ErrorState description={error} onRetry={generate} className="print:hidden" />}
 
       {loading && !report && (
-        <div className="flex items-center justify-center py-16 print:hidden">
+        <div className="flex flex-col items-center justify-center gap-3 py-16 print:hidden">
           <Spinner />
+          <p className="text-xs text-text-tertiary">Synthesizing report…</p>
         </div>
       )}
 
@@ -173,7 +179,7 @@ export default function ReportsPage() {
         />
       )}
 
-      {report && <ReportView report={report} />}
+      {report && <ReportView report={report} justGenerated={justGenerated} />}
     </div>
   );
 }
@@ -182,9 +188,13 @@ export default function ReportsPage() {
  * Styled like an actual printed document — letterhead, numbered sections with a margin rule, a
  * jump-to-section index for longer reports — rather than a plain Card dump of text. Keeps every
  * bit of existing functionality (the .report-printable hook the print stylesheet above targets,
- * the honest AI-source badge, the raw section.data rendering below) unchanged.
+ * the honest AI-source badge, the raw section.data rendering below) unchanged. `justGenerated`
+ * (Task 4) plays a typewriter reveal over each section's already-fully-fetched body text right
+ * after a fresh generate() — never implying live token-by-token generation, since the fetch has
+ * genuinely already completed by the time this renders (the honest "in flight" moment is the
+ * "Synthesizing report…" spinner state above, before `report` exists at all).
  */
-function ReportView({ report }: { report: Report }) {
+function ReportView({ report, justGenerated = false }: { report: Report; justGenerated?: boolean }) {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="report-printable overflow-hidden rounded-xl border border-border-default bg-surface shadow-elevation-2">
@@ -227,7 +237,11 @@ function ReportView({ report }: { report: Report }) {
                   <h3 className="text-base font-semibold text-text-primary">{section.heading}</h3>
                 </div>
                 <div className="mt-3 border-l border-border-default pl-5">
-                  <p className="max-w-[68ch] whitespace-pre-line text-sm leading-relaxed text-text-secondary">{section.body}</p>
+                  <TypewriterText
+                    text={section.body}
+                    enabled={justGenerated}
+                    className="max-w-[68ch] whitespace-pre-line text-sm leading-relaxed text-text-secondary"
+                  />
                   {section.data && <SectionData data={section.data} />}
                 </div>
               </section>

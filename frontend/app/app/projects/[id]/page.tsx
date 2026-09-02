@@ -1,11 +1,24 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
-import { Area, ComposedChart, Line, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, Legend } from "recharts";
-import { Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Area,
+  Bar,
+  ComposedChart,
+  Line,
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+  Legend,
+} from "recharts";
+import { Dices, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
+import { PMO_COMMAND_EVENT, type PmoCommandDetail } from "@/lib/commands";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { AISourceBadge, Badge, priorityTone, projectStatusTone, riskLevelTone, taskStatusTone, type SemanticTone } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
@@ -18,6 +31,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { Button } from "@/components/ui/Button";
+import { TypewriterText } from "@/components/ui/TypewriterText";
 import { Gantt } from "@/components/viz/Gantt";
 import { Timeline } from "@/components/viz/Timeline";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
@@ -63,6 +77,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       resource: resources.data!.find((r) => r.id === a.resource_id),
     }));
   }, [allocations.data, resources.data]);
+
+  // Command-bar action commands (lib/commands.ts's PMO_COMMAND_EVENT — "Generate Boardroom Memo
+  // for this project" / "Run Monte Carlo Simulation for this project") need to (1) switch to the
+  // PMO tab, since that's where both live and Tabs only mounts the active tab's content, and (2)
+  // tell the freshly-mounted card to actually fire its real action. `pmoAutoAction` carries a
+  // fresh object (not just the action string) so a repeat command for the same action still
+  // re-triggers the consuming card's effect even though the string value didn't change.
+  const [activeTab, setActiveTab] = useState("overview");
+  const [pmoAutoAction, setPmoAutoAction] = useState<{ action: PmoCommandDetail["action"]; nonce: number } | null>(null);
+
+  useEffect(() => {
+    function onPmoCommand(e: Event) {
+      const detail = (e as CustomEvent<PmoCommandDetail>).detail;
+      if (!detail || detail.projectId !== id) return;
+      setActiveTab("pmo");
+      setPmoAutoAction({ action: detail.action, nonce: Date.now() });
+    }
+    window.addEventListener(PMO_COMMAND_EVENT, onPmoCommand);
+    return () => window.removeEventListener(PMO_COMMAND_EVENT, onPmoCommand);
+  }, [id]);
 
   if (project.loading) {
     return (
@@ -146,6 +180,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       <Tabs
+        value={activeTab}
+        onChange={setActiveTab}
         tabs={[
           {
             id: "overview",
@@ -222,7 +258,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           {
             id: "pmo",
             label: "PMO",
-            content: <PMOTab projectId={id} projectName={p.name} />,
+            content: <PMOTab projectId={id} projectName={p.name} autoAction={pmoAutoAction} />,
           },
         ]}
       />
@@ -550,11 +586,22 @@ function BudgetTrendChart({
  * with `font-tabular`, matching this app's existing "monospaced executive readout" convention
  * (see the Cost Forecast card above and frontend/app/globals.css's font-tabular usage).
  */
-function PMOTab({ projectId, projectName }: { projectId: string; projectName: string }) {
+function PMOTab({
+  projectId,
+  projectName,
+  autoAction,
+}: {
+  projectId: string;
+  projectName: string;
+  autoAction?: { action: PmoCommandDetail["action"]; nonce: number } | null;
+}) {
   const evm = useApi(() => pmoApi.evm(projectId), [projectId]);
   const raci = useApi(() => pmoApi.raci(projectId), [projectId]);
   const stageGates = useApi(() => pmoApi.stageGates(projectId), [projectId]);
   const contractLedger = useApi(() => pmoApi.contractLedger(projectId), [projectId]);
+
+  const memoTrigger = autoAction?.action === "memo" ? autoAction.nonce : null;
+  const monteCarloTrigger = autoAction?.action === "montecarlo" ? autoAction.nonce : null;
 
   return (
     <div className="space-y-6">
@@ -564,7 +611,8 @@ function PMOTab({ projectId, projectName }: { projectId: string; projectName: st
         <StageGatesCard loading={stageGates.loading} error={stageGates.error} data={stageGates.data} onRetry={stageGates.reload} />
       </div>
       <RaciCard loading={raci.loading} error={raci.error} data={raci.data} onRetry={raci.reload} />
-      <BoardroomMemoCard projectId={projectId} projectName={projectName} />
+      <MonteCarloCard projectId={projectId} autoRunTrigger={monteCarloTrigger} />
+      <BoardroomMemoCard projectId={projectId} projectName={projectName} autoGenerateTrigger={memoTrigger} />
     </div>
   );
 }
@@ -855,10 +903,283 @@ function RaciCard({
   );
 }
 
-function BoardroomMemoCard({ projectId, projectName }: { projectId: string; projectName: string }) {
+// ---------------------------------------------------------------------------------------------
+// Monte Carlo timeline simulation (Task 3) — genuinely computed client-side over this project's
+// real tasks (GET /projects/{id}/tasks, already fetched elsewhere on this page). Nothing here is
+// fabricated: every duration sample is a real triangular-distribution draw and every completion
+// date is derived from the resulting distribution — but it IS a simplified illustrative model,
+// disclosed as such in the UI caption rather than presented as a precise forecast.
+//
+// Duration model per task (disclosed): optimistic = 0.8 × estimated_hours, most-likely =
+// actual_hours if the task is DONE (a real, already-incurred duration) else estimated_hours,
+// pessimistic = 1.5 × estimated_hours. A task with no estimated_hours contributes 0 duration
+// (honest fallback — there's no real number to model from).
+//
+// Dependency handling (disclosed): tasks are sequenced along real `depends_on` edges — a task's
+// simulated start is the latest simulated finish among its real dependencies, so the total
+// project duration for one iteration is the length of the resulting critical path. A task with no
+// dependency data (common — dependency modeling here is best-effort over whatever edges the API
+// actually returned) is treated as independent, i.e. able to start at time 0.
+// ---------------------------------------------------------------------------------------------
+
+const MC_ITERATIONS = 1000;
+const MC_OPTIMISTIC_FACTOR = 0.8;
+const MC_PESSIMISTIC_FACTOR = 1.5;
+const MC_HOURS_PER_DAY = 8; // disclosed simplification — calendar days, weekends not excluded
+
+interface MonteCarloResult {
+  totalsHours: number[]; // sorted ascending, one per iteration
+  p50Hours: number;
+  p80Hours: number;
+  p90Hours: number;
+  histogram: { bucketStartDays: number; count: number }[];
+  taskCount: number;
+  dependencyEdgeCount: number;
+}
+
+function sampleTriangular(min: number, mode: number, max: number): number {
+  if (max <= min) return min;
+  const clampedMode = Math.min(Math.max(mode, min), max);
+  const u = Math.random();
+  const c = (clampedMode - min) / (max - min);
+  if (u < c) {
+    return min + Math.sqrt(u * (max - min) * (clampedMode - min));
+  }
+  return max - Math.sqrt((1 - u) * (max - min) * (max - clampedMode));
+}
+
+function taskBaseHours(task: Task): number {
+  if (task.status === "DONE" && task.actual_hours != null && task.actual_hours > 0) {
+    return task.actual_hours;
+  }
+  return task.estimated_hours ?? 0;
+}
+
+/** Topological order over real `depends_on` edges (dependencies before dependents). Falls back to
+ * input order for any task caught in a cycle — defensive only; real seeded data has none. */
+function topoOrder(tasks: Task[]): string[] {
+  const ids = new Set(tasks.map((t) => t.id));
+  const deps = new Map(tasks.map((t) => [t.id, (t.depends_on ?? []).filter((d) => ids.has(d))]));
+  const order: string[] = [];
+  const visited = new Set<string>();
+  const inStack = new Set<string>();
+
+  function visit(id: string) {
+    if (visited.has(id) || inStack.has(id)) return;
+    inStack.add(id);
+    for (const dep of deps.get(id) ?? []) visit(dep);
+    inStack.delete(id);
+    visited.add(id);
+    order.push(id);
+  }
+  for (const t of tasks) visit(t.id);
+  return order;
+}
+
+function percentile(sortedAsc: number[], p: number): number {
+  if (sortedAsc.length === 0) return 0;
+  const idx = Math.min(sortedAsc.length - 1, Math.max(0, Math.ceil(p * sortedAsc.length) - 1));
+  return sortedAsc[idx];
+}
+
+function runMonteCarloSimulation(tasks: Task[]): MonteCarloResult {
+  const relevant = tasks.filter((t) => t.status !== "DONE" || (t.actual_hours ?? 0) > 0 || (t.estimated_hours ?? 0) > 0);
+  const order = topoOrder(relevant);
+  const deps = new Map(relevant.map((t) => [t.id, (t.depends_on ?? []).filter((d) => relevant.some((r) => r.id === d))]));
+  const byId = new Map(relevant.map((t) => [t.id, t]));
+  const dependencyEdgeCount = [...deps.values()].reduce((s, d) => s + d.length, 0);
+
+  const totals: number[] = [];
+  for (let i = 0; i < MC_ITERATIONS; i++) {
+    const finish = new Map<string, number>();
+    for (const id of order) {
+      const task = byId.get(id)!;
+      const base = taskBaseHours(task);
+      const duration = base > 0 ? sampleTriangular(base * MC_OPTIMISTIC_FACTOR, base, base * MC_PESSIMISTIC_FACTOR) : 0;
+      const depIds = deps.get(id) ?? [];
+      const start = depIds.length > 0 ? Math.max(0, ...depIds.map((d) => finish.get(d) ?? 0)) : 0;
+      finish.set(id, start + duration);
+    }
+    const total = finish.size > 0 ? Math.max(0, ...[...finish.values()]) : 0;
+    totals.push(total);
+  }
+  totals.sort((a, b) => a - b);
+
+  const p50Hours = percentile(totals, 0.5);
+  const p80Hours = percentile(totals, 0.8);
+  const p90Hours = percentile(totals, 0.9);
+
+  const maxTotal = totals[totals.length - 1] ?? 0;
+  const bucketCount = 20;
+  const bucketWidthHours = maxTotal > 0 ? maxTotal / bucketCount : 1;
+  const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+    bucketStartDays: (i * bucketWidthHours) / MC_HOURS_PER_DAY,
+    count: 0,
+  }));
+  for (const total of totals) {
+    const idx = bucketWidthHours > 0 ? Math.min(bucketCount - 1, Math.floor(total / bucketWidthHours)) : 0;
+    buckets[idx].count += 1;
+  }
+
+  return {
+    totalsHours: totals,
+    p50Hours,
+    p80Hours,
+    p90Hours,
+    histogram: buckets,
+    taskCount: relevant.length,
+    dependencyEdgeCount,
+  };
+}
+
+function hoursToCompletionDate(hours: number): string {
+  const days = Math.ceil(hours / MC_HOURS_PER_DAY);
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
+function MonteCarloCard({ projectId, autoRunTrigger }: { projectId: string; autoRunTrigger?: number | null }) {
+  const tasksApi = useApi(() => api.tasks(projectId), [projectId]);
+  const [result, setResult] = useState<MonteCarloResult | null>(null);
+  const [running, setRunning] = useState(false);
+
+  function run() {
+    const tasks = tasksApi.data;
+    if (!tasks || tasks.length === 0) return;
+    setRunning(true);
+    // Yield a frame so the "Running…" state actually paints before the (synchronous, but real)
+    // 1,000-iteration simulation blocks the main thread for its (sub-second) duration.
+    requestAnimationFrame(() => {
+      const r = runMonteCarloSimulation(tasks);
+      setResult(r);
+      setRunning(false);
+    });
+  }
+
+  const lastTrigger = useRef<number | null>(null);
+  useEffect(() => {
+    if (autoRunTrigger == null || autoRunTrigger === lastTrigger.current) return;
+    if (tasksApi.loading) return; // will simply not re-fire once tasks load; a manual click still works
+    lastTrigger.current = autoRunTrigger;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- run() flips "Running…" before its real work, same as a manual button click; the command-bar trigger just automates that click
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRunTrigger, tasksApi.loading]);
+
+  const chartData = useMemo(
+    () => (result ? result.histogram.map((b) => ({ day: Math.round(b.bucketStartDays), count: b.count })) : []),
+    [result],
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="flex items-center gap-1.5">
+            <Dices className="h-4 w-4 text-brand-600 dark:text-brand-300" aria-hidden="true" />
+            Monte Carlo Timeline Simulation
+          </CardTitle>
+          <CardDescription>
+            {MC_ITERATIONS.toLocaleString()} client-side iterations over this project&apos;s real tasks — a simplified,
+            illustrative model, not a precise forecast (see assumptions below).
+          </CardDescription>
+        </div>
+        <Button onClick={run} loading={running} disabled={running || tasksApi.loading || (tasksApi.data ?? []).length === 0} size="sm">
+          <Dices className="h-4 w-4" aria-hidden="true" />
+          Run Simulation
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {tasksApi.error ? (
+          <ErrorState description={tasksApi.error.message} onRetry={tasksApi.reload} />
+        ) : tasksApi.loading ? (
+          <Spinner />
+        ) : (tasksApi.data ?? []).length === 0 ? (
+          <EmptyState title="No tasks to simulate" description="This project has no tasks yet, so there's nothing to run a timeline simulation over." />
+        ) : !result ? (
+          <EmptyState
+            title="No simulation run yet"
+            description={`Click Run Simulation to sample ${MC_ITERATIONS.toLocaleString()} possible timelines from this project's ${(tasksApi.data ?? []).length} real tasks.`}
+          />
+        ) : (
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {[
+                { label: "P50", hours: result.p50Hours, hint: "50% of simulated runs finish by here" },
+                { label: "P80", hours: result.p80Hours, hint: "80% of simulated runs finish by here" },
+                { label: "P90", hours: result.p90Hours, hint: "90% of simulated runs finish by here" },
+              ].map((s) => (
+                <div key={s.label} className="rounded-md border border-border-default bg-subtle/40 p-3.5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{s.label} Completion</p>
+                  <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">
+                    {formatDate(hoursToCompletionDate(s.hours))}
+                  </p>
+                  <p className="mt-0.5 font-tabular text-xs text-text-tertiary">
+                    ~{Math.ceil(s.hours / MC_HOURS_PER_DAY)} days · {Math.round(s.hours)}h
+                  </p>
+                  <p className="mt-1 text-[11px] text-text-tertiary">{s.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="h-56 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ left: 4, right: 12, top: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fontSize: 11 }}
+                    stroke="var(--text-tertiary)"
+                    label={{ value: "Simulated duration (days)", position: "insideBottom", offset: -2, fontSize: 11, fill: "var(--text-tertiary)" }}
+                  />
+                  <YAxis tick={{ fontSize: 11 }} stroke="var(--text-tertiary)" allowDecimals={false} width={32} />
+                  <RTooltip
+                    formatter={(value) => [`${value} run${value === 1 ? "" : "s"}`, "Simulations"]}
+                    labelFormatter={(label) => `~${label} days`}
+                    contentStyle={{ background: "var(--surface)", border: "1px solid var(--border-default)", borderRadius: 8, fontSize: 12 }}
+                  />
+                  <Bar dataKey="count" fill="var(--brand-500)" radius={[3, 3, 0, 0]} />
+                  <ReferenceLine x={Math.round(result.p50Hours / MC_HOURS_PER_DAY)} stroke="var(--info-solid)" strokeDasharray="4 3" label={{ value: "P50", fontSize: 10, fill: "var(--info-solid)" }} />
+                  <ReferenceLine x={Math.round(result.p90Hours / MC_HOURS_PER_DAY)} stroke="var(--critical-solid)" strokeDasharray="4 3" label={{ value: "P90", fontSize: 10, fill: "var(--critical-solid)" }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="rounded-md border border-border-default bg-subtle/30 px-3.5 py-3 text-[11px] leading-relaxed text-text-tertiary">
+              <p className="font-medium text-text-secondary">Model, disclosed:</p>
+              <p className="mt-1">
+                Per task: optimistic = 0.8× estimated hours, most-likely = actual hours if done else estimated hours,
+                pessimistic = 1.5× estimated hours; each iteration draws a triangular-distribution sample per task.
+                {result.dependencyEdgeCount > 0
+                  ? ` Sequenced along ${result.dependencyEdgeCount} real dependency edge${result.dependencyEdgeCount === 1 ? "" : "s"} across ${result.taskCount} tasks — a task starts only after its real dependencies finish.`
+                  : ` No dependency edges were present on these ${result.taskCount} tasks, so all were treated as independently schedulable (best-effort given the real data available).`}
+                {" "}Hours convert to calendar days at {MC_HOURS_PER_DAY}h/day; weekends are not excluded. This is a
+                simplified illustrative model over real task data, not a guaranteed delivery date.
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function BoardroomMemoCard({
+  projectId,
+  projectName,
+  autoGenerateTrigger,
+}: {
+  projectId: string;
+  projectName: string;
+  autoGenerateTrigger?: number | null;
+}) {
   const [memo, setMemo] = useState<BoardroomMemo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Freshly-generated memos play the typewriter reveal (Task 4); a memo restored from state on an
+  // unrelated re-render should not replay it, so this flips true only right after generate() lands.
+  const [justGenerated, setJustGenerated] = useState(false);
 
   async function generate() {
     setLoading(true);
@@ -866,12 +1187,23 @@ function BoardroomMemoCard({ projectId, projectName }: { projectId: string; proj
     try {
       const result = await pmoApi.generateBoardroomMemo(projectId);
       setMemo(result);
+      setJustGenerated(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to generate the boardroom memo.");
     } finally {
       setLoading(false);
     }
   }
+
+  // Command-bar "Generate Boardroom Memo for this project" action (Task 5) — fires the same real
+  // generate() call a manual click would, once per distinct trigger nonce.
+  const lastTrigger = useRef<number | null>(null);
+  useEffect(() => {
+    if (autoGenerateTrigger == null || autoGenerateTrigger === lastTrigger.current) return;
+    lastTrigger.current = autoGenerateTrigger;
+    generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGenerateTrigger]);
 
   return (
     <Card>
@@ -891,21 +1223,26 @@ function BoardroomMemoCard({ projectId, projectName }: { projectId: string; proj
           <EmptyState title="No memo generated yet" description="Click Generate Boardroom Memo to produce a fresh brief from this project's live EVM and contract data." />
         )}
         {loading && !memo && (
-          <div className="flex items-center justify-center py-10">
+          <div className="flex flex-col items-center justify-center gap-3 py-10">
             <Spinner />
+            <p className="text-xs text-text-tertiary">Synthesizing brief…</p>
           </div>
         )}
         {memo && (
           <div className="space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-default pb-4">
               <div>
-                <p className="text-sm text-text-secondary">{memo.narrative.summary}</p>
+                <TypewriterText text={memo.narrative.summary} enabled={justGenerated} className="text-sm text-text-secondary" />
                 <p className="mt-1 text-xs text-text-tertiary">Generated {formatDate(memo.generated_at)}</p>
               </div>
               <AISourceBadge source={memo.narrative.source} />
             </div>
             {memo.narrative.detail && (
-              <p className="whitespace-pre-line text-sm leading-relaxed text-text-secondary">{memo.narrative.detail}</p>
+              <TypewriterText
+                text={memo.narrative.detail}
+                enabled={justGenerated}
+                className="whitespace-pre-line text-sm leading-relaxed text-text-secondary"
+              />
             )}
             <div>
               <h4 className="mb-3 text-sm font-semibold text-text-primary">Trade-off Options</h4>

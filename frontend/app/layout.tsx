@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Project Command Center",
+  title: "AI Project Management System",
   description: "AI-Powered Project Management & Decision Intelligence Platform",
 };
 

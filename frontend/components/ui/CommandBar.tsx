@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { CornerDownLeft, FolderKanban, Search } from "lucide-react";
+import { CornerDownLeft, Dices, FolderKanban, Presentation, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { softSpring } from "@/lib/motion";
 import { api } from "@/lib/api";
-import { commands as staticCommands, type Command } from "@/lib/commands";
+import { commands as staticCommands, dispatchPmoCommand, type Command } from "@/lib/commands";
 import { bestFuzzyScore } from "@/lib/fuzzy";
 
 const OPEN_EVENT = "aipcc:open-command-bar";
@@ -47,6 +47,7 @@ interface ScoredCommand extends Command {
  */
 export function CommandBar() {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -130,7 +131,37 @@ export function CommandBar() {
     };
   }, [open, projectCommands]);
 
-  const allCommands = useMemo(() => [...staticCommands, ...(projectCommands ?? [])], [projectCommands]);
+  // Context-aware action commands — real side effects, not navigation (see lib/commands.ts's
+  // `onSelect` extension). Only offered while the user is actually on that project's detail page,
+  // since the action targets components mounted there (BoardroomMemoCard / MonteCarloCard in
+  // app/app/projects/[id]/page.tsx) via the PMO_COMMAND_EVENT they're already listening for.
+  const currentProjectId = pathname?.match(/^\/app\/projects\/([^/]+)$/)?.[1] ?? null;
+  const actionCommands = useMemo<Command[]>(() => {
+    if (!currentProjectId) return [];
+    return [
+      {
+        id: "action-boardroom-memo",
+        label: "Generate Boardroom Memo for this project",
+        group: "Actions",
+        icon: Presentation,
+        keywords: ["memo", "brief", "pmo", "generate"],
+        onSelect: () => dispatchPmoCommand(currentProjectId, "memo"),
+      },
+      {
+        id: "action-monte-carlo",
+        label: "Run Monte Carlo Simulation for this project",
+        group: "Actions",
+        icon: Dices,
+        keywords: ["simulation", "timeline", "forecast", "pmo", "monte carlo"],
+        onSelect: () => dispatchPmoCommand(currentProjectId, "montecarlo"),
+      },
+    ];
+  }, [currentProjectId]);
+
+  const allCommands = useMemo(
+    () => [...staticCommands, ...actionCommands, ...(projectCommands ?? [])],
+    [actionCommands, projectCommands],
+  );
 
   const results = useMemo<ScoredCommand[]>(() => {
     if (!query.trim()) return allCommands.map((c) => ({ ...c, score: 0 }));
@@ -157,9 +188,15 @@ export function CommandBar() {
     return map;
   }, [results]);
 
-  function navigateTo(cmd: Command) {
+  /** Activates a command: runs its real side effect (`onSelect`) if it has one, otherwise
+   * navigates to its route. A command carries exactly one of the two (see lib/commands.ts). */
+  function activate(cmd: Command) {
     setOpen(false);
-    router.push(cmd.href);
+    if (cmd.onSelect) {
+      cmd.onSelect();
+      return;
+    }
+    if (cmd.href) router.push(cmd.href);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
@@ -172,7 +209,7 @@ export function CommandBar() {
     } else if (e.key === "Enter") {
       e.preventDefault();
       const cmd = results[activeIndex];
-      if (cmd) navigateTo(cmd);
+      if (cmd) activate(cmd);
     }
   }
 
@@ -234,7 +271,7 @@ export function CommandBar() {
                         key={item.id}
                         type="button"
                         onMouseEnter={() => setActiveIndex(idx)}
-                        onClick={() => navigateTo(item)}
+                        onClick={() => activate(item)}
                         className={cn(
                           "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
                           active

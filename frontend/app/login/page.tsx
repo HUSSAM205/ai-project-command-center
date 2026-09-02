@@ -35,7 +35,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <Link href="/" className="mb-8 flex items-center justify-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-brand-700 text-sm font-bold text-white">AC</span>
-          <span className="text-sm font-semibold text-text-primary">AI Project Command Center</span>
+          <span className="text-sm font-semibold text-text-primary">AI Project Management System</span>
         </Link>
         <div className="rounded-lg border border-border-default bg-surface p-6 shadow-sm">
           <h1 className="text-lg font-semibold text-text-primary">Sign in</h1>

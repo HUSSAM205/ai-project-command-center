@@ -29,8 +29,35 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { Spinner } from "@/components/ui/LoadingState";
 import { CommandBar, CommandBarTrigger } from "@/components/ui/CommandBar";
 import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/TelemetryDrawer";
+import { PulseDot } from "@/components/ui/PulseDot";
 import { useAuth } from "@/lib/auth";
-import { initials } from "@/lib/utils";
+import { useDashboardStream, type StreamStatus } from "@/lib/useDashboardStream";
+import { initials, cn } from "@/lib/utils";
+
+// Honest labels per real SSE/dashboard-stream connection state (useDashboardStream.ts) — only the
+// genuinely-live state claims the stream is "Active", matching the same real-state-only pattern
+// LiveIndicator.tsx already uses elsewhere in the app. Never a static "always green" dot.
+const STREAM_STATUS_LABEL: Record<StreamStatus, string> = {
+  connecting: "Live Executive Workspace · Connecting…",
+  live: "Live Executive Workspace · Single-Origin Stream Active",
+  reconnecting: "Live Executive Workspace · Reconnecting…",
+  offline: "Live Executive Workspace · Stream Offline",
+};
+
+function WorkspaceStreamStatus({ status }: { status: StreamStatus }) {
+  const live = status === "live";
+  return (
+    <span
+      className={cn(
+        "hidden shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium sm:inline-flex",
+        live ? "border-success-border bg-success-bg text-success-fg" : "border-border-default bg-subtle text-text-tertiary",
+      )}
+    >
+      {live ? <PulseDot tone="success" /> : <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-text-tertiary" aria-hidden="true" />}
+      {STREAM_STATUS_LABEL[status]}
+    </span>
+  );
+}
 
 // Primary sidebar nav, top to bottom. Append one line per shipped page — do not restructure this
 // component or Sidebar.tsx to add an item. Per docs/PROJECT_PLAN.md's "no dead links" rule, only
@@ -60,6 +87,10 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
   const { user, isLoading, isAuthenticated, isDemo, logout } = useAuth();
   const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Real SSE/dashboard-stream connection state for the topbar's status module below — same hook
+  // the dashboard page itself uses (lib/useDashboardStream.ts), so the pulse reflects the actual
+  // connection, never a fabricated "always green" indicator.
+  const dashboardStream = useDashboardStream();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -89,7 +120,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
             <span className="text-sm font-semibold text-text-primary leading-tight">
               AI Project
               <br />
-              Command Center
+              Management System
             </span>
           </Link>
         }
@@ -119,6 +150,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           }
           right={
             <>
+              <WorkspaceStreamStatus status={dashboardStream.status} />
               <TelemetryDrawerTrigger />
               <ThemeToggle />
               <Dropdown
