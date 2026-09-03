@@ -34,6 +34,15 @@ interface PortfolioPmoResult {
   offline: boolean;
 }
 
+// Firing all N projects x 4 calls at once (up to 28 concurrent requests against the real 7-project
+// seed org) was verified live to overwhelm the Render free-tier backend: EVM calls came back 503
+// (no worker available) and an immediate retry on that same burst came back 429 -- not the AI rate
+// limiter (this endpoint never calls enforce_rate_limit), an infra-level burst protection this page's
+// own fan-out was tripping. Fetching a few projects at a time keeps concurrency low enough for the
+// real data to actually load instead of always racing the timeout below into the fallback.
+const PMO_FETCH_BATCH_SIZE = 2;
+const PMO_LOAD_TIMEOUT_MS = 15000;
+
 /** Fetches the same per-project PMO endpoints the project detail page's PMO tab already calls
  * (pmoApi.evm/stageGates/raci/contractLedger — backend/app/api/pmo.py) for every project, then
  * combines them client-side — the same aggregation shape as lib/api.ts's allTasks()/allRisks()
@@ -45,26 +54,34 @@ interface PortfolioPmoResult {
  * genuinely-stalled call (not a rejection, just a fetch that never settles) used to hang the
  * whole Promise.all forever with nothing left to throw and nothing for the old outer try/catch
  * to catch — an infinite spinner distinct from an outright failure. The entire per-project fan-out
- * is now wrapped in the same withTimeout used everywhere else in this file (offlinePreview.ts's
- * OVERALL_TIMEOUT_MS, 9s) so a stall converts to a timeout rejection like any other failure and
- * falls through to the fictional-portfolio fallback below — bounded wait, never indefinite. */
+ * is now wrapped in withTimeout (PMO_LOAD_TIMEOUT_MS, longer than the 9s used elsewhere since
+ * batching below trades some speed for actually succeeding) so a stall converts to a timeout
+ * rejection like any other failure and falls through to the fictional-portfolio fallback below —
+ * bounded wait, never indefinite. */
 async function loadPortfolioPmo(): Promise<PortfolioPmoResult> {
   try {
     const rows = await withTimeout(
       (async () => {
         const projects = await api.projects();
-        return Promise.all(
-          projects.map(async (project) => {
-            const [evm, gates, raci, ledger] = await Promise.all([
-              pmoApi.evm(project.id).catch(() => null),
-              pmoApi.stageGates(project.id).catch(() => [] as StageGate[]),
-              pmoApi.raci(project.id).catch(() => [] as RaciEntry[]),
-              pmoApi.contractLedger(project.id).catch(() => null),
-            ]);
-            return { project, evm, gates, raci, ledger };
-          }),
-        );
+        const rows: ProjectPmo[] = [];
+        for (let i = 0; i < projects.length; i += PMO_FETCH_BATCH_SIZE) {
+          const batch = projects.slice(i, i + PMO_FETCH_BATCH_SIZE);
+          const batchRows = await Promise.all(
+            batch.map(async (project) => {
+              const [evm, gates, raci, ledger] = await Promise.all([
+                pmoApi.evm(project.id).catch(() => null),
+                pmoApi.stageGates(project.id).catch(() => [] as StageGate[]),
+                pmoApi.raci(project.id).catch(() => [] as RaciEntry[]),
+                pmoApi.contractLedger(project.id).catch(() => null),
+              ]);
+              return { project, evm, gates, raci, ledger };
+            }),
+          );
+          rows.push(...batchRows);
+        }
+        return rows;
       })(),
+      PMO_LOAD_TIMEOUT_MS,
     );
     return { rows, offline: false };
   } catch {
