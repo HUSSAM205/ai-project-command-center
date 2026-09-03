@@ -29,6 +29,7 @@ export function RiskFormModal({
   projectId,
   projects,
   risk,
+  prefillTitle,
   onSaved,
 }: {
   open: boolean;
@@ -36,11 +37,14 @@ export function RiskFormModal({
   projectId?: string;
   projects?: Project[];
   risk?: Risk | null;
+  // Pre-fills the title in CREATE mode (e.g. from a document's AI-extracted risk text) without
+  // switching the form into edit mode the way passing `risk` does.
+  prefillTitle?: string;
   onSaved: (risk: Risk) => void;
 }) {
   const isEdit = !!risk;
   const [selectedProjectId, setSelectedProjectId] = useState(projectId ?? risk?.project_id ?? "");
-  const [title, setTitle] = useState(risk?.title ?? "");
+  const [title, setTitle] = useState(risk?.title ?? prefillTitle ?? "");
   const [category, setCategory] = useState<RiskCategory>(risk?.category ?? "OPERATIONAL");
   const [probability, setProbability] = useState(String(risk?.probability ?? 3));
   const [impact, setImpact] = useState(String(risk?.impact ?? 3));

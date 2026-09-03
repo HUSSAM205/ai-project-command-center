@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
+import { ProjectFormModal } from "@/components/forms/ProjectFormModal";
+import { useToast } from "@/components/ui/Toast";
 import { formatCompactCurrency, formatDate, titleCase } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
@@ -31,14 +33,22 @@ const EMPTY_PROJECTS: Project[] = [];
 export default function ProjectsPage() {
   const router = useRouter();
   const { isDemo } = useAuth();
+  const { push } = useToast();
   const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [health, setHealth] = useState("");
+  const [localProjects, setLocalProjects] = useState<Project[] | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
-  const rows = projects.data?.data ?? EMPTY_PROJECTS;
+  const rows = localProjects ?? projects.data?.data ?? EMPTY_PROJECTS;
   const offline = projects.data?.offline ?? false;
+
+  function handleCreated(project: Project) {
+    setLocalProjects([project, ...rows]);
+    push("Project created", "success");
+  }
 
   const filtered = useMemo(() => {
     return rows.filter((p) => {
@@ -103,15 +113,17 @@ export default function ProjectsPage() {
           <h1 className="text-xl font-semibold text-text-primary">Projects</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {rows.length} projects</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {offline && <OfflinePreviewBanner onRetry={projects.reload} subject="portfolio data" inline />}
           {!isDemo && (
-            <Button size="sm" disabled title="Project creation ships with the full write API">
+            <Button size="sm" disabled={offline} title={offline ? "Reconnect to create a project" : undefined} onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4" /> New Project
             </Button>
           )}
         </div>
       </div>
+
+      <ProjectFormModal key={createOpen ? "open" : "closed"} open={createOpen} onClose={() => setCreateOpen(false)} onCreated={handleCreated} />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative w-full sm:w-64">

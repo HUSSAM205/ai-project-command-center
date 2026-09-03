@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
-import { AlertTriangle, FileText, Loader2, SendHorizonal } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, ShieldPlus, SendHorizonal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ErrorState } from "@/components/ui/ErrorState";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/LoadingState";
+import { RiskFormModal } from "@/components/forms/RiskFormModal";
 import { formatBytes, formatDate, titleCase } from "@/lib/utils";
 
 interface QAEntry {
@@ -23,11 +24,16 @@ interface QAEntry {
 export default function DocumentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const detail = useApi(() => api.document(id), [id]);
+  // Only fetched to feed the project picker when a document isn't already scoped to one project
+  // (Document.project_id can be null — an org-wide upload). Cheap and only used by the modal below.
+  const projectsApi = useApi(() => api.projects(), []);
   const { push } = useToast();
 
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [qa, setQa] = useState<QAEntry[]>([]);
+  const [riskDraftTitle, setRiskDraftTitle] = useState<string | null>(null);
+  const [addedRisks, setAddedRisks] = useState<Set<string>>(new Set());
 
   if (detail.loading) {
     return (
@@ -124,7 +130,24 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
                 title="Important Dates"
                 items={extractionData.important_dates?.map((d) => `${d.date} — ${d.context}`)}
               />
-              <ExtractionSection title="Risks" items={extractionData.risks} tone="critical" />
+              <ExtractionSection
+                title="Risks"
+                items={extractionData.risks}
+                tone="critical"
+                renderAction={(risk) =>
+                  addedRisks.has(risk) ? (
+                    <span className="shrink-0 text-[11px] font-medium text-success-fg">Added</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setRiskDraftTitle(risk)}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border-default px-1.5 py-0.5 text-[11px] font-medium text-text-tertiary transition-colors hover:border-critical-border hover:text-critical-fg"
+                    >
+                      <ShieldPlus className="h-3 w-3" aria-hidden="true" /> Add to Risk Register
+                    </button>
+                  )
+                }
+              />
               <ExtractionSection title="Action Items" items={extractionData.action_items} />
               <ExtractionSection title="Missing Information" items={extractionData.missing_information} tone="warning" />
             </CardContent>
@@ -168,6 +191,20 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
           </Card>
         </>
       )}
+
+      <RiskFormModal
+        key={riskDraftTitle ?? "closed"}
+        open={riskDraftTitle !== null}
+        onClose={() => setRiskDraftTitle(null)}
+        projectId={document.project_id ?? undefined}
+        projects={projectsApi.data ?? undefined}
+        prefillTitle={riskDraftTitle ?? undefined}
+        onSaved={() => {
+          if (riskDraftTitle) setAddedRisks((prev) => new Set(prev).add(riskDraftTitle));
+          push("Risk added to the register", "success");
+          setRiskDraftTitle(null);
+        }}
+      />
     </div>
   );
 }
@@ -176,10 +213,12 @@ function ExtractionSection({
   title,
   items,
   tone = "neutral",
+  renderAction,
 }: {
   title: string;
   items?: string[];
   tone?: "neutral" | "critical" | "warning";
+  renderAction?: (item: string) => React.ReactNode;
 }) {
   const textTone =
     tone === "critical" ? "text-critical-fg" : tone === "warning" ? "text-warning-fg" : "text-text-secondary";
@@ -191,9 +230,12 @@ function ExtractionSection({
       ) : (
         <ul className="space-y-1.5">
           {items.map((item, i) => (
-            <li key={i} className={`flex gap-2 text-sm ${textTone}`}>
-              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-current" aria-hidden="true" />
-              <span>{item}</span>
+            <li key={i} className={`flex items-start justify-between gap-2 text-sm ${textTone}`}>
+              <span className="flex gap-2">
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-current" aria-hidden="true" />
+                <span>{item}</span>
+              </span>
+              {renderAction?.(item)}
             </li>
           ))}
         </ul>

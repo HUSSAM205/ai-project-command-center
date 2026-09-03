@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { LinkButton } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { LogoMark } from "@/components/ui/LogoMark";
 import { NetworkHero } from "@/components/ui/NetworkHero";
 import { Badge, riskLevelTone, projectStatusTone, SOLID_COLORS } from "@/components/ui/Badge";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
@@ -56,7 +57,7 @@ function SiteHeader() {
     <header className="sticky top-0 z-30 border-b border-border-default bg-surface/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-8">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-700 text-xs font-bold text-white">AC</span>
+          <LogoMark size={28} />
           <span className="text-sm font-semibold text-text-primary">AI Project Management System</span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-text-secondary md:flex">

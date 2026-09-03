@@ -303,6 +303,24 @@ body {
   }
 }
 
+/* Slow continuous rotation for the diamond emblem in the "Managed & powered by" lockup
+   (BrandFooter.tsx) — deliberately gentle (24s/turn) so it reads as ambient presence, not a
+   loading spinner. Never applied to the primary sidebar/login logo mark, which stays static for
+   legibility and brand stability. */
+@keyframes brand-rotate-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.brand-rotate-slow {
+  animation: brand-rotate-slow 24s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-rotate-slow {
+    animation: none;
+  }
+}
+
 /* Ambient texture for the main app-shell canvas — a faint fixed dot grid, deliberately low
    contrast (WCAG "gridline-subtle": grid must not compete with data) so it reads as a quiet
    surface texture, never as chart gridlines or a decorative distraction. CSS-only (no image,

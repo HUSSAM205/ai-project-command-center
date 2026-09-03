@@ -24,6 +24,7 @@ import {
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
 import { BrandFooter } from "@/components/ui/BrandFooter";
+import { LogoMark } from "@/components/ui/LogoMark";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Spinner } from "@/components/ui/LoadingState";
@@ -141,9 +142,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
         }
         header={
           <Link href="/app/dashboard" className="flex items-center gap-2 border-b border-border-default px-4 py-3.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-700 text-xs font-bold text-white">
-              AC
-            </span>
+            <LogoMark size={28} />
             <span className="bg-gradient-to-r from-text-primary via-text-primary to-text-tertiary bg-clip-text text-sm font-semibold leading-tight text-transparent">
               AI Project
               <br />
