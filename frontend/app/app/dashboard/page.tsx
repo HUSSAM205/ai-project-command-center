@@ -163,10 +163,11 @@ export default function DashboardPage() {
           </h1>
           <p className="mt-1 text-sm text-text-tertiary">A real-time view across every active initiative.</p>
         </div>
-        <LiveIndicator status={dashboard.status} className="mt-1" />
+        <div className="mt-1 flex items-center gap-3">
+          {dashboardOffline && <OfflinePreviewBanner onRetry={dashboard.reload} subject="portfolio data" inline />}
+          <LiveIndicator status={dashboard.status} />
+        </div>
       </div>
-
-      {dashboardOffline && <OfflinePreviewBanner onRetry={dashboard.reload} subject="portfolio data" />}
 
       {/* KPI row */}
       <motion.div
@@ -313,7 +314,7 @@ export default function DashboardPage() {
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={riskEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={44} outerRadius={68} paddingAngle={2}>
+                    <Pie data={riskEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={44} outerRadius={68} paddingAngle={3} cornerRadius={6} stroke="var(--bg-surface)" strokeWidth={2}>
                       {riskEntries.map(([k]) => (
                         <Cell key={k} fill={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} />
                       ))}
@@ -368,6 +369,16 @@ export default function DashboardPage() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={financialData} barGap={4}>
+                    <defs>
+                      <linearGradient id="dashBarBudget" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--neutral-300)" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="var(--neutral-300)" stopOpacity={0.35} />
+                      </linearGradient>
+                      <linearGradient id="dashBarActual" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--brand-500)" stopOpacity={1} />
+                        <stop offset="100%" stopColor="var(--brand-500)" stopOpacity={0.4} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} />
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={{ stroke: "var(--border-default)" }} tickLine={false} />
                     <YAxis
@@ -377,9 +388,9 @@ export default function DashboardPage() {
                       tickFormatter={(v) => formatCompactCurrency(v)}
                       width={56}
                     />
-                    <RTooltip contentStyle={tooltipStyle} formatter={(v) => formatCompactCurrency(Number(v))} />
-                    <Bar dataKey="Budget" fill="var(--neutral-300)" radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="Actual" fill="var(--brand-500)" radius={[3, 3, 0, 0]} />
+                    <RTooltip cursor={{ fill: "var(--brand-500)", opacity: 0.06 }} contentStyle={tooltipStyle} formatter={(v) => formatCompactCurrency(Number(v))} />
+                    <Bar dataKey="Budget" fill="url(#dashBarBudget)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Actual" fill="url(#dashBarActual)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -466,7 +477,7 @@ export default function DashboardPage() {
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={statusEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={44} outerRadius={68} paddingAngle={2}>
+                    <Pie data={statusEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={44} outerRadius={68} paddingAngle={3} cornerRadius={6} stroke="var(--bg-surface)" strokeWidth={2}>
                       {statusEntries.map(([k]) => (
                         <Cell key={k} fill={STATUS_COLORS[k] ?? "var(--neutral-400)"} />
                       ))}
@@ -501,7 +512,8 @@ function shortName(name: string) {
 const tooltipStyle = {
   background: "var(--bg-surface-raised)",
   border: "1px solid var(--border-default)",
-  borderRadius: 8,
+  borderRadius: 10,
   fontSize: 12,
   color: "var(--text-primary)",
+  boxShadow: "var(--shadow-elevation-2)",
 };

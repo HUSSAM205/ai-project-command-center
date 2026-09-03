@@ -89,13 +89,16 @@ export default function TasksPage() {
           <h1 className="text-xl font-semibold text-text-primary">Tasks</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {tasks.length} tasks across all projects</p>
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-border-default p-0.5">
-          <Button variant={view === "table" ? "secondary" : "ghost"} size="sm" onClick={() => setView("table")} aria-pressed={view === "table"}>
-            <List className="h-4 w-4" /> Table
-          </Button>
-          <Button variant={view === "kanban" ? "secondary" : "ghost"} size="sm" onClick={() => setView("kanban")} aria-pressed={view === "kanban"}>
-            <LayoutGrid className="h-4 w-4" /> Kanban
-          </Button>
+        <div className="flex items-center gap-3">
+          {offline && <OfflinePreviewBanner onRetry={tasksApi.reload} subject="tasks" inline />}
+          <div className="flex items-center gap-1 rounded-md border border-border-default p-0.5">
+            <Button variant={view === "table" ? "secondary" : "ghost"} size="sm" onClick={() => setView("table")} aria-pressed={view === "table"}>
+              <List className="h-4 w-4" /> Table
+            </Button>
+            <Button variant={view === "kanban" ? "secondary" : "ghost"} size="sm" onClick={() => setView("kanban")} aria-pressed={view === "kanban"}>
+              <LayoutGrid className="h-4 w-4" /> Kanban
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -119,8 +122,6 @@ export default function TasksPage() {
           placeholder="All priorities"
         />
       </div>
-
-      {offline && <OfflinePreviewBanner onRetry={tasksApi.reload} subject="tasks" />}
 
       {view === "table" ? (
         <DataTable columns={columns} rows={filtered} loading={tasksApi.loading} getRowKey={(t) => t.id} emptyTitle="No tasks match your filters" />

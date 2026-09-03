@@ -54,12 +54,13 @@ export default function RisksPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">Risk Register</h1>
-        <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {risks.length} risks across the portfolio</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">Risk Register</h1>
+          <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {risks.length} risks across the portfolio</p>
+        </div>
+        {offline && <OfflinePreviewBanner onRetry={risksApi.reload} subject="risk data" inline className="mt-1" />}
       </div>
-
-      {offline && <OfflinePreviewBanner onRetry={risksApi.reload} subject="risk data" />}
 
       <>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">

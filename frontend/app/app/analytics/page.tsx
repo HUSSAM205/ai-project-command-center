@@ -86,9 +86,8 @@ export default function AnalyticsPage() {
               : `Trends derived from real project data — ${d.organization_name}, generated ${formatDate(d.generated_at)}.`}
           </p>
         </div>
+        {offline && <OfflinePreviewBanner onRetry={analytics.reload} subject="analytics" inline className="mt-1" />}
       </div>
-
-      {offline && <OfflinePreviewBanner onRetry={analytics.reload} subject="analytics" />}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <MetricCard label="Total Projects" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-4 w-4" />} />

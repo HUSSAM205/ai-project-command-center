@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Briefcase, WifiOff } from "lucide-react";
+import { Plus, Briefcase } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { BusinessCase } from "@/lib/types";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { useAuth } from "@/lib/auth";
@@ -98,25 +99,15 @@ export default function ConsultingPage() {
             Digital transformation business cases — scored opportunities, an ROI calculator, and an AI-narrated roadmap.
           </p>
         </div>
-        {!isDemo && !offline && (
-          <Button size="sm" onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> New Business Case
-          </Button>
-        )}
-      </div>
-
-      {offline && (
-        <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-bg px-3.5 py-2.5 text-sm text-warning-fg">
-          <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>
-            Live backend unreachable — showing an offline preview with illustrative business cases, not your organization&apos;s real
-            data.
-          </span>
-          <button type="button" onClick={cases.reload} className="ml-auto shrink-0 font-medium underline underline-offset-2">
-            Retry
-          </button>
+        <div className="flex items-center gap-3">
+          {offline && <OfflinePreviewBanner onRetry={cases.reload} subject="business cases" inline />}
+          {!isDemo && !offline && (
+            <Button size="sm" onClick={() => setOpen(true)}>
+              <Plus className="h-4 w-4" /> New Business Case
+            </Button>
+          )}
         </div>
-      )}
+      </div>
 
       {cases.loading ? (
         <div className="flex h-40 items-center justify-center">

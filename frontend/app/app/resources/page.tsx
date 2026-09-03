@@ -128,12 +128,15 @@ export default function ResourcesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">Resources</h1>
-        <p className="mt-1 text-sm text-text-tertiary">Capacity, allocation, and utilization across the bench</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">Resources</h1>
+          <p className="mt-1 text-sm text-text-tertiary">Capacity, allocation, and utilization across the bench</p>
+        </div>
+        {offline && (
+          <OfflinePreviewBanner onRetry={() => { resourcesApi.reload(); tasksApi.reload(); }} subject="resource data" inline className="mt-1" />
+        )}
       </div>
-
-      {offline && <OfflinePreviewBanner onRetry={() => { resourcesApi.reload(); tasksApi.reload(); }} subject="resource data" />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-5">

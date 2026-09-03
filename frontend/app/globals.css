@@ -333,3 +333,14 @@ body {
   pointer-events: none;
   z-index: -1;
 }
+
+/* Card.tsx's hover glow — a soft brand-tinted shadow ring, derived from the same --brand-500
+   token via color-mix rather than a hardcoded cyan. Split out of Tailwind's arbitrary-value
+   syntax because `var(--x)/alpha` isn't valid CSS (the `/opacity` modifier only works on
+   Tailwind's own color utilities, not inside a raw shadow value). */
+.card-glass:hover {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--brand-500) 12%, transparent),
+    0 20px 48px -16px color-mix(in srgb, var(--brand-500) 18%, transparent),
+    var(--shadow-elevation-2);
+}

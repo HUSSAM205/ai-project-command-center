@@ -9,9 +9,10 @@ import { EmptyState } from "@/components/ui/EmptyState";
 const tooltipStyle = {
   background: "var(--bg-surface-raised)",
   border: "1px solid var(--border-default)",
-  borderRadius: 8,
+  borderRadius: 10,
   fontSize: 12,
   color: "var(--text-primary)",
+  boxShadow: "var(--shadow-elevation-2)",
 };
 
 /**
@@ -39,10 +40,16 @@ export function RiskRadar({ risks }: { risks: Risk[] }) {
     <div className="h-56">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data} outerRadius="72%">
+          <defs>
+            <radialGradient id="riskRadarFill">
+              <stop offset="0%" stopColor="var(--brand-500)" stopOpacity={0.42} />
+              <stop offset="100%" stopColor="var(--brand-500)" stopOpacity={0.08} />
+            </radialGradient>
+          </defs>
           <PolarGrid stroke="var(--border-default)" />
           <PolarAngleAxis dataKey="category" tick={{ fontSize: 10, fill: "var(--text-tertiary)" }} />
           <PolarRadiusAxis tick={{ fontSize: 9, fill: "var(--text-tertiary)" }} axisLine={false} tickCount={4} allowDecimals={false} />
-          <Radar dataKey="score" stroke="var(--brand-500)" fill="var(--brand-500)" fillOpacity={0.28} strokeWidth={2} />
+          <Radar dataKey="score" stroke="var(--brand-500)" fill="url(#riskRadarFill)" strokeWidth={2} dot={{ r: 2.5, fill: "var(--brand-500)", strokeWidth: 0 }} />
           <RTooltip contentStyle={tooltipStyle} formatter={(v) => [String(v), "Severity-weighted score"]} />
         </RadarChart>
       </ResponsiveContainer>

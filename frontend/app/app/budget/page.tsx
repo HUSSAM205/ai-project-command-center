@@ -103,12 +103,13 @@ export default function BudgetPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">Budget &amp; Financials</h1>
-        <p className="mt-1 text-sm text-text-tertiary">Baseline cost forecasts use an EVM formula (EAC = BAC / CPI) — never presented as ML.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">Budget &amp; Financials</h1>
+          <p className="mt-1 text-sm text-text-tertiary">Baseline cost forecasts use an EVM formula (EAC = BAC / CPI) — never presented as ML.</p>
+        </div>
+        {offline && <OfflinePreviewBanner onRetry={data.reload} subject="budget data" inline className="mt-1" />}
       </div>
-
-      {offline && <OfflinePreviewBanner onRetry={data.reload} subject="budget data" />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Total Budget" value={formatCompactCurrency(totals.totalBudget)} />
@@ -137,13 +138,38 @@ export default function BudgetPage() {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} barGap={4}>
+                  <defs>
+                    <linearGradient id="budgetBarBudget" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--neutral-300)" stopOpacity={0.9} />
+                      <stop offset="100%" stopColor="var(--neutral-300)" stopOpacity={0.35} />
+                    </linearGradient>
+                    <linearGradient id="budgetBarActual" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--brand-500)" stopOpacity={1} />
+                      <stop offset="100%" stopColor="var(--brand-500)" stopOpacity={0.4} />
+                    </linearGradient>
+                    <linearGradient id="budgetBarForecast" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--warning-solid)" stopOpacity={1} />
+                      <stop offset="100%" stopColor="var(--warning-solid)" stopOpacity={0.4} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border-default)" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={{ stroke: "var(--border-default)" }} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: "var(--text-tertiary)" }} axisLine={false} tickLine={false} tickFormatter={(v) => formatCompactCurrency(v)} width={56} />
-                  <RTooltip contentStyle={{ background: "var(--bg-surface-raised)", border: "1px solid var(--border-default)", borderRadius: 8, fontSize: 12, color: "var(--text-primary)" }} formatter={(v) => formatCompactCurrency(Number(v))} />
-                  <Bar dataKey="Budget" fill="var(--neutral-300)" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Actual" fill="var(--brand-500)" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Forecast" fill="var(--warning-solid)" radius={[3, 3, 0, 0]} />
+                  <RTooltip
+                    cursor={{ fill: "var(--brand-500)", opacity: 0.06 }}
+                    contentStyle={{
+                      background: "var(--bg-surface-raised)",
+                      border: "1px solid var(--border-default)",
+                      borderRadius: 10,
+                      fontSize: 12,
+                      color: "var(--text-primary)",
+                      boxShadow: "var(--shadow-elevation-2)",
+                    }}
+                    formatter={(v) => formatCompactCurrency(Number(v))}
+                  />
+                  <Bar dataKey="Budget" fill="url(#budgetBarBudget)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Actual" fill="url(#budgetBarActual)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Forecast" fill="url(#budgetBarForecast)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

@@ -103,11 +103,14 @@ export default function ProjectsPage() {
           <h1 className="text-xl font-semibold text-text-primary">Projects</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {rows.length} projects</p>
         </div>
-        {!isDemo && (
-          <Button size="sm" disabled title="Project creation ships with the full write API">
-            <Plus className="h-4 w-4" /> New Project
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          {offline && <OfflinePreviewBanner onRetry={projects.reload} subject="portfolio data" inline />}
+          {!isDemo && (
+            <Button size="sm" disabled title="Project creation ships with the full write API">
+              <Plus className="h-4 w-4" /> New Project
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -131,8 +134,6 @@ export default function ProjectsPage() {
         />
         <Select className="w-44" value={health} onChange={(e) => setHealth(e.target.value)} options={HEALTH_OPTIONS} placeholder="All health levels" />
       </div>
-
-      {offline && <OfflinePreviewBanner onRetry={projects.reload} subject="portfolio data" />}
 
       <DataTable
         columns={columns}

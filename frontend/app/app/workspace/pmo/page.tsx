@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, TrendingDown, WifiOff } from "lucide-react";
+import { AlertTriangle, TrendingDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Badge, type SemanticTone } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -196,27 +197,17 @@ export default function PmoWorkspacePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
-          PMO Workspace
-        </h1>
-        <p className="mt-1 text-sm text-text-tertiary">
-          Portfolio-wide rollup of the real EVM, stage-gate, and RACI data already tracked per project.
-        </p>
-      </div>
-
-      {offline && (
-        <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-bg px-3.5 py-2.5 text-sm text-warning-fg">
-          <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>
-            Live backend unreachable — showing an offline preview with illustrative portfolio data, not your organization&apos;s real
-            figures.
-          </span>
-          <button type="button" onClick={portfolio.reload} className="ml-auto shrink-0 font-medium underline underline-offset-2">
-            Retry
-          </button>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
+            PMO Workspace
+          </h1>
+          <p className="mt-1 text-sm text-text-tertiary">
+            Portfolio-wide rollup of the real EVM, stage-gate, and RACI data already tracked per project.
+          </p>
         </div>
-      )}
+        {offline && <OfflinePreviewBanner onRetry={portfolio.reload} subject="portfolio data" inline className="mt-1" />}
+      </div>
 
       {portfolio.loading ? (
         <div className="flex h-64 items-center justify-center">
