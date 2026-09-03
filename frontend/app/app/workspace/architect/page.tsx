@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { ArrowRight, Cpu, Database, FileSearch, Info, Network, ShieldAlert, Sparkles } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Badge, type SemanticTone } from "@/components/ui/Badge";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -29,6 +30,7 @@ import type { AIProviderStatus, AIUsage, Document, DocumentStatus } from "@/lib/
  * drawer and the cards below it — see useApi(...)/useAIRouterTelemetry() in this file.
  */
 export default function ArchitectWorkspacePage() {
+  const { t } = useLanguage();
   const documents = useApi(() => api.documents(), []);
   const telemetry = useAIRouterTelemetry();
   const [activeStage, setActiveStage] = useState<StageId | null>(null);
@@ -37,7 +39,7 @@ export default function ArchitectWorkspacePage() {
     <div className="space-y-6">
       <div>
         <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
-          AI Solution Architect
+          {t("pageArchitectWorkspaceTitle")}
         </h1>
         <p className="mt-1 text-sm text-text-tertiary">
           How this app&apos;s document intelligence and AI router actually work, plus the real telemetry behind them.

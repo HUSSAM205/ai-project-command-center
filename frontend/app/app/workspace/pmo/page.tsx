@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AlertTriangle, TrendingDown } from "lucide-react";
 import { api } from "@/lib/api";
+import { useLanguage } from "@/lib/i18n";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
@@ -80,6 +81,7 @@ function stageGateStatusTone(status: string): SemanticTone {
 }
 
 export default function PmoWorkspacePage() {
+  const { t } = useLanguage();
   const portfolio = useApi(loadPortfolioPmo, []);
   const rows = useMemo(() => portfolio.data?.rows ?? [], [portfolio.data]);
   const offline = portfolio.data?.offline ?? false;
@@ -219,7 +221,7 @@ export default function PmoWorkspacePage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
-            PMO Workspace
+            {t("pagePmoWorkspaceTitle")}
           </h1>
           <p className="mt-1 text-sm text-text-tertiary">
             Portfolio-wide rollup of the real EVM, stage-gate, and RACI data already tracked per project.

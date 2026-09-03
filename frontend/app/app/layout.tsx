@@ -34,6 +34,7 @@ import { CommandBar, CommandBarTrigger } from "@/components/ui/CommandBar";
 import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/TelemetryDrawer";
 import { PulseDot } from "@/components/ui/PulseDot";
 import { useAuth } from "@/lib/auth";
+import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
 import { useDashboardStream, type StreamStatus } from "@/lib/useDashboardStream";
 import { useSlowLoadHint } from "@/lib/useSlowLoadHint";
 import { initials, cn } from "@/lib/utils";
@@ -67,32 +68,72 @@ function WorkspaceStreamStatus({ status }: { status: StreamStatus }) {
   );
 }
 
+// Scoped bilingual support (see lib/i18n.tsx): switches the sidebar nav, this subtitle, and each
+// module's page title between English and Arabic, and flips `dir`/`lang` on <html>. Table headers,
+// forms, and body copy stay English either way — a real translation of those, kept terminology-
+// consistent, is a separate effort from this toggle.
+function LanguageToggle({ lang, onChange }: { lang: Lang; onChange: (lang: Lang) => void }) {
+  return (
+    <div role="group" aria-label="Language" className="hidden items-center gap-0.5 rounded-full border border-border-default bg-subtle p-0.5 text-xs font-medium sm:flex">
+      <button
+        type="button"
+        onClick={() => onChange("en")}
+        aria-pressed={lang === "en"}
+        className={cn(
+          "rounded-full px-2.5 py-1 transition-colors",
+          lang === "en" ? "bg-brand-700 text-white dark:bg-brand-500" : "text-text-tertiary hover:text-text-primary",
+        )}
+      >
+        EN
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("ar")}
+        aria-pressed={lang === "ar"}
+        dir="rtl"
+        className={cn(
+          "rounded-full px-2.5 py-1 transition-colors",
+          lang === "ar" ? "bg-brand-700 text-white dark:bg-brand-500" : "text-text-tertiary hover:text-text-primary",
+        )}
+      >
+        العربية
+      </button>
+    </div>
+  );
+}
+
 // Primary sidebar nav, top to bottom. Append one line per shipped page — do not restructure this
 // component or Sidebar.tsx to add an item. Per docs/PROJECT_PLAN.md's "no dead links" rule, only
 // add an entry once the page it points to actually exists and works. When you do add a page,
 // also register it in lib/commands.ts so it's reachable from the Cmd+K command bar.
-const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/app/dashboard", icon: <LayoutDashboard /> },
-  { label: "Projects", href: "/app/projects", icon: <FolderKanban /> },
-  { label: "Tasks", href: "/app/tasks", icon: <ListChecks /> },
-  { label: "Resources", href: "/app/resources", icon: <Users /> },
-  { label: "Risks", href: "/app/risks", icon: <ShieldAlert /> },
-  { label: "Budget", href: "/app/budget", icon: <Wallet /> },
-  { label: "AI Assistant", href: "/app/ai-assistant", icon: <Sparkles /> },
-  { label: "Documents", href: "/app/documents", icon: <FileText /> },
-  { label: "Consulting", href: "/app/consulting", icon: <Briefcase /> },
-  { label: "Analytics", href: "/app/analytics", icon: <BarChart3 /> },
-  { label: "Reports", href: "/app/reports", icon: <ClipboardList /> },
-  // Persona-oriented aggregation/overview pages — curate and link into the same real data the
-  // pages above already serve, rather than a new data source. Grouped visually last since they're
-  // dashboards-of-dashboards, not primary functional surfaces.
-  { label: "Architect Workspace", href: "/app/workspace/architect", icon: <Cpu /> },
-  { label: "PMO Workspace", href: "/app/workspace/pmo", icon: <ClipboardCheck /> },
-  { label: "Executive Suite", href: "/app/workspace/product", icon: <Presentation /> },
-];
+// A function (not a module-level constant) only so labels can go through t() — hrefs/icons/order
+// are unchanged from before i18n existed.
+function buildNavItems(t: (key: TranslationKey) => string): NavItem[] {
+  return [
+    { label: t("navDashboard"), href: "/app/dashboard", icon: <LayoutDashboard /> },
+    { label: t("navProjects"), href: "/app/projects", icon: <FolderKanban /> },
+    { label: t("navTasks"), href: "/app/tasks", icon: <ListChecks /> },
+    { label: t("navResources"), href: "/app/resources", icon: <Users /> },
+    { label: t("navRisks"), href: "/app/risks", icon: <ShieldAlert /> },
+    { label: t("navBudget"), href: "/app/budget", icon: <Wallet /> },
+    { label: t("navAiAssistant"), href: "/app/ai-assistant", icon: <Sparkles /> },
+    { label: t("navDocuments"), href: "/app/documents", icon: <FileText /> },
+    { label: t("navConsulting"), href: "/app/consulting", icon: <Briefcase /> },
+    { label: t("navAnalytics"), href: "/app/analytics", icon: <BarChart3 /> },
+    { label: t("navReports"), href: "/app/reports", icon: <ClipboardList /> },
+    // Persona-oriented aggregation/overview pages — curate and link into the same real data the
+    // pages above already serve, rather than a new data source. Grouped visually last since
+    // they're dashboards-of-dashboards, not primary functional surfaces.
+    { label: t("navArchitectWorkspace"), href: "/app/workspace/architect", icon: <Cpu /> },
+    { label: t("navPmoWorkspace"), href: "/app/workspace/pmo", icon: <ClipboardCheck /> },
+    { label: t("navExecutiveSuite"), href: "/app/workspace/product", icon: <Presentation /> },
+  ];
+}
 
 export default function AppShellLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading, isAuthenticated, isDemo, logout } = useAuth();
+  const { lang, setLang, t } = useLanguage();
+  const navItems = buildNavItems(t);
   const router = useRouter();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // Real SSE/dashboard-stream connection state for the topbar's status module below — same hook
@@ -133,7 +174,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
       <Sidebar
-        navItems={NAV_ITEMS}
+        navItems={navItems}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
         footer={
@@ -159,13 +200,12 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
           left={
             <div className="flex items-center gap-3">
               <CommandBarTrigger />
-              <span className="hidden truncate text-sm text-text-tertiary lg:inline">
-                AI Project Management System — Live Portfolio
-              </span>
+              <span className="hidden truncate text-sm text-text-tertiary lg:inline">{t("topbarSubtitle")}</span>
             </div>
           }
           right={
             <>
+              <LanguageToggle lang={lang} onChange={setLang} />
               <BrandFooter variant="compact" />
               <WorkspaceStreamStatus status={dashboardStream.status} />
               <TelemetryDrawerTrigger />

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import type { CostForecast, Project } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { MetricCard } from "@/components/ui/MetricCard";
@@ -36,6 +37,7 @@ function buildOfflineProjectsWithForecasts(): ProjectForecast[] {
 }
 
 export default function BudgetPage() {
+  const { t } = useLanguage();
   const data = useApi(() => withOfflineFallback(loadProjectsWithForecasts, buildOfflineProjectsWithForecasts), []);
 
   const offline = data.data?.offline ?? false;
@@ -105,7 +107,7 @@ export default function BudgetPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Budget &amp; Financials</h1>
+          <h1 className="text-xl font-semibold text-text-primary">{t("pageBudgetTitle")}</h1>
           <p className="mt-1 text-sm text-text-tertiary">Baseline cost forecasts use an EVM formula (EAC = BAC / CPI) — never presented as ML.</p>
         </div>
         {offline && <OfflinePreviewBanner onRetry={data.reload} subject="budget data" inline className="mt-1" />}

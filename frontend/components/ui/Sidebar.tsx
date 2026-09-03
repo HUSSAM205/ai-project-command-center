@@ -74,13 +74,17 @@ export function Sidebar({
 
   return (
     <>
-      <aside className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:border-r md:border-border-default md:bg-surface">
+      {/* border-e/inset-inline-start (not border-r/left-0): this shell is a plain flex row, so
+          dir="rtl" (lib/i18n.tsx) already reverses which physical side the sidebar renders on —
+          these logical properties keep the border/slide-in edge on the correct side either way,
+          with zero change in the default LTR (English) rendering. */}
+      <aside className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:border-e md:border-border-default md:bg-surface">
         {renderContent("desktop")}
       </aside>
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-neutral-950/50" onClick={onMobileClose} aria-hidden="true" />
-          <aside className="absolute left-0 top-0 h-full w-64 border-r border-border-default bg-surface shadow-2xl">
+          <aside className="absolute start-0 top-0 h-full w-64 border-e border-border-default bg-surface shadow-2xl">
             {renderContent("mobile")}
           </aside>
         </div>

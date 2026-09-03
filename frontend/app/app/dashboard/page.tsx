@@ -21,6 +21,7 @@ import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Sparkles } from 
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useDashboardStream } from "@/lib/useDashboardStream";
+import { useLanguage } from "@/lib/i18n";
 import type { Project, ProjectStatus, Resource, Risk } from "@/lib/types";
 import { MotionCard } from "@/components/ui/MotionCard";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
@@ -71,6 +72,7 @@ const STATUS_COLORS: Record<ProjectStatus, string> = {
 };
 
 export default function DashboardPage() {
+  const { t } = useLanguage();
   const dashboard = useDashboardStream();
   const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
   const resources = useApi(() => withOfflineFallback(() => api.resources(), buildOfflineResources), []);
@@ -168,7 +170,7 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
-            Portfolio Dashboard
+            {t("pageDashboardTitle")}
           </h1>
           <p className="mt-1 text-sm text-text-tertiary">A real-time view across every active initiative.</p>
         </div>
@@ -239,7 +241,7 @@ export default function DashboardPage() {
         <MotionCard className="lg:col-span-2">
           <CardHeader>
             <div>
-              <CardTitle>Portfolio Health &amp; Status</CardTitle>
+              <CardTitle>Enterprise Health &amp; Status</CardTitle>
               <CardDescription>Score distribution across every active initiative</CardDescription>
             </div>
             <Link href="/app/projects" className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
@@ -247,17 +249,23 @@ export default function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-              <StatChip label="Total" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-3.5 w-3.5" />} />
-              <StatChip label="Active" value={<AnimatedNumber value={d.active_projects} />} icon={<PlayCircle className="h-3.5 w-3.5" />} />
-              <StatChip label="Completed" value={<AnimatedNumber value={d.completed_projects} />} icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
-              <StatChip
-                label="At Risk"
-                value={<AnimatedNumber value={d.at_risk_projects} />}
-                icon={<AlertTriangle className="h-3.5 w-3.5" />}
-                tone={d.at_risk_projects > 0 ? "critical" : "neutral"}
-              />
-              <StatChip label="Avg. Health" value={<AnimatedNumber value={d.avg_health_score} format={(n) => Math.round(n).toString()} />} />
+            {/* @container: this card spans half the viewport at lg+ (lg:col-span-2 above), so a
+                viewport-relative sm:/md: breakpoint here would flip to 5 columns while the card
+                itself is still narrow — exactly the collision this container query avoids by
+                sizing off the card's own width instead. */}
+            <div className="@container">
+              <div className="grid grid-cols-2 gap-2 @xs:grid-cols-3 @lg:grid-cols-5 sm:gap-3">
+                <StatChip label="Total" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-3.5 w-3.5" />} />
+                <StatChip label="Active" value={<AnimatedNumber value={d.active_projects} />} icon={<PlayCircle className="h-3.5 w-3.5" />} />
+                <StatChip label="Completed" value={<AnimatedNumber value={d.completed_projects} />} icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
+                <StatChip
+                  label="At Risk"
+                  value={<AnimatedNumber value={d.at_risk_projects} />}
+                  icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                  tone={d.at_risk_projects > 0 ? "critical" : "neutral"}
+                />
+                <StatChip label="Avg. Health" value={<AnimatedNumber value={d.avg_health_score} format={(n) => Math.round(n).toString()} />} />
+              </div>
             </div>
 
             {healthCurve.length > 1 && (
@@ -530,12 +538,12 @@ function StatChip({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-lg border border-border-default/60 bg-subtle/70 px-3 py-2", className)}>
-      <div className="flex items-center gap-1.5 text-text-tertiary">
+    <div className={cn("min-w-0 rounded-lg border border-border-default/60 bg-subtle/70 px-2.5 py-2 sm:px-3", className)}>
+      <div className="flex min-w-0 items-center gap-1.5 text-text-tertiary">
         {icon}
-        <p className="text-[11px] font-medium uppercase tracking-wide">{label}</p>
+        <p className="min-w-0 truncate text-[11px] font-medium uppercase tracking-wide">{label}</p>
       </div>
-      <p className={cn("mt-0.5 font-tabular text-lg font-semibold", tone === "critical" ? "text-critical-fg" : "text-text-primary")}>{value}</p>
+      <p className={cn("mt-0.5 truncate font-tabular text-lg font-semibold", tone === "critical" ? "text-critical-fg" : "text-text-primary")}>{value}</p>
     </div>
   );
 }

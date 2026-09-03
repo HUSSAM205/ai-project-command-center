@@ -5,6 +5,7 @@ import { LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
+import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/components/ui/Toast";
 import type { Task, TaskStatus } from "@/lib/types";
 import { Badge, priorityTone, taskStatusTone } from "@/components/ui/Badge";
@@ -23,6 +24,7 @@ const PRIORITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 const EMPTY_TASKS: Task[] = [];
 
 export default function TasksPage() {
+  const { t } = useLanguage();
   const { isDemo } = useAuth();
   const { push } = useToast();
   const tasksApi = useApi(() => withOfflineFallback(() => api.allTasks(), buildOfflineTasks), []);
@@ -127,7 +129,7 @@ export default function TasksPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Tasks</h1>
+          <h1 className="text-xl font-semibold text-text-primary">{t("pageTasksTitle")}</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {tasks.length} tasks across all projects</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

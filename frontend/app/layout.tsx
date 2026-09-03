@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "@/lib/auth";
+import { LanguageProvider } from "@/lib/i18n";
 import { ToastProvider } from "@/components/ui/Toast";
 import "./globals.css";
 
@@ -33,9 +34,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           {/* reducedMotion="user" makes every Framer Motion animation in the app honor the OS
               prefers-reduced-motion setting automatically (falls back to instant/opacity-only). */}
           <MotionConfig reducedMotion="user">
-            <AuthProvider>
-              <ToastProvider>{children}</ToastProvider>
-            </AuthProvider>
+            <LanguageProvider>
+              <AuthProvider>
+                <ToastProvider>{children}</ToastProvider>
+              </AuthProvider>
+            </LanguageProvider>
           </MotionConfig>
         </ThemeProvider>
       </body>

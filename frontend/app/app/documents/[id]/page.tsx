@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
-import { AlertTriangle, FileText, Loader2, ShieldPlus, SendHorizonal } from "lucide-react";
+import { use, useEffect, useState } from "react";
+import { AlertTriangle, Clock, FileText, Loader2, ShieldPlus, SendHorizonal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "@/components/ui/Toast";
@@ -34,6 +34,35 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
   const [qa, setQa] = useState<QAEntry[]>([]);
   const [riskDraftTitle, setRiskDraftTitle] = useState<string | null>(null);
   const [addedRisks, setAddedRisks] = useState<Set<string>>(new Set());
+
+  const status = detail.data?.document.status;
+  const inProgress = status === "PENDING" || status === "PROCESSING";
+  const createdAt = detail.data?.document.created_at;
+
+  // The old copy here claimed "this page updates automatically" without any polling behind it —
+  // a PENDING/PROCESSING document just sat on a static spinner forever. This actually polls (same
+  // interval the Documents list page already uses), and separately tracks how long it's been
+  // stuck: if the backend's background task never reports back (e.g. a dyno restart mid-job, with
+  // no real retry/dead-letter handling — a genuine gap, not something this page can fix), staying
+  // silent about that is worse than a plain spinner. STALL_MS is generous — real processing is
+  // usually seconds — so this only fires for a job that's actually stuck, not a slow one.
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    // Nothing to reset when processing finishes: the banners below are also gated on
+    // `inProgress`, so a stale `stalled=true` from a finished job simply stops being read.
+    if (!inProgress) return;
+    const STALL_MS = 90_000;
+    const startedAt = createdAt ? new Date(createdAt).getTime() : Date.now();
+    const pollId = setInterval(() => detail.reload(), 3000);
+    const stallId = setInterval(() => {
+      if (Date.now() - startedAt > STALL_MS) setStalled(true);
+    }, 3000);
+    return () => {
+      clearInterval(pollId);
+      clearInterval(stallId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- detail.reload is stable; re-running per tick is the point
+  }, [inProgress, createdAt]);
 
   if (detail.loading) {
     return (
@@ -99,7 +128,22 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
         />
       )}
 
-      {(document.status === "PENDING" || document.status === "PROCESSING") && (
+      {inProgress && stalled && (
+        <Card>
+          <CardContent className="flex items-start gap-3 py-6">
+            <Clock className="mt-0.5 h-5 w-5 shrink-0 text-warning-fg" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Taking longer than expected</p>
+              <p className="mt-1 text-xs leading-relaxed text-text-tertiary">
+                This has been processing for over a minute. The background job may have been interrupted before it could
+                finish — that can happen on this deployment. Try uploading the file again from the Documents page.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {inProgress && !stalled && (
         <Card>
           <CardContent className="flex items-center gap-3 py-8">
             <Loader2 className="h-5 w-5 animate-spin text-text-tertiary" aria-hidden="true" />
@@ -107,7 +151,7 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
               <p className="text-sm font-medium text-text-primary">
                 {document.status === "PENDING" ? "Waiting to process…" : "Extracting text, chunking, and embedding…"}
               </p>
-              <p className="text-xs text-text-tertiary">This page updates automatically once it&rsquo;s ready.</p>
+              <p className="text-xs text-text-tertiary">This page checks for updates every few seconds.</p>
             </div>
           </CardContent>
         </Card>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Search, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import type { Project } from "@/lib/types";
 import { Badge, priorityTone, projectStatusTone, riskLevelTone } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
@@ -31,6 +32,7 @@ const HEALTH_OPTIONS = [
 const EMPTY_PROJECTS: Project[] = [];
 
 export default function ProjectsPage() {
+  const { t } = useLanguage();
   const router = useRouter();
   const { push } = useToast();
   const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
@@ -109,7 +111,7 @@ export default function ProjectsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Projects</h1>
+          <h1 className="text-xl font-semibold text-text-primary">{t("pageProjectsTitle")}</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {rows.length} projects</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

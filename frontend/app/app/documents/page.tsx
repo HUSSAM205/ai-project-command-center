@@ -6,6 +6,7 @@ import { FileText, Upload, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
+import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/components/ui/Toast";
 import type { Document } from "@/lib/types";
 import { Badge, documentStatusTone } from "@/components/ui/Badge";
@@ -18,6 +19,13 @@ import { formatBytes, formatDate, titleCase } from "@/lib/utils";
 
 const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".txt"];
 const IN_PROGRESS_STATUSES = new Set(["PENDING", "PROCESSING"]);
+// If the backend's background job hasn't reported back in this long, treat it as stuck rather
+// than silently polling forever — see the matching timeout on the document detail page.
+const STALL_MS = 90_000;
+
+function isStalled(d: Document): boolean {
+  return IN_PROGRESS_STATUSES.has(d.status) && Date.now() - new Date(d.created_at).getTime() > STALL_MS;
+}
 
 interface SimulatedDocument {
   id: string;
@@ -50,6 +58,7 @@ async function simulateLocalUpload(file: File): Promise<SimulatedDocument> {
 }
 
 export default function DocumentsPage() {
+  const { t } = useLanguage();
   const router = useRouter();
   const { isDemo } = useAuth();
   const { push } = useToast();
@@ -120,7 +129,12 @@ export default function DocumentsPage() {
       key: "status",
       header: "Status",
       sortValue: (d) => d.status,
-      render: (d) => <Badge tone={documentStatusTone(d.status)}>{titleCase(d.status)}</Badge>,
+      render: (d) =>
+        isStalled(d) ? (
+          <Badge tone="warning">Stalled</Badge>
+        ) : (
+          <Badge tone={documentStatusTone(d.status)}>{titleCase(d.status)}</Badge>
+        ),
     },
     { key: "uploaded", header: "Uploaded", align: "right", sortValue: (d) => d.created_at, render: (d) => <span className="font-tabular">{formatDate(d.created_at)}</span> },
   ];
@@ -128,7 +142,7 @@ export default function DocumentsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">Documents</h1>
+        <h1 className="text-xl font-semibold text-text-primary">{t("pageDocumentsTitle")}</h1>
         <p className="mt-1 text-sm text-text-tertiary">{documents.length} document{documents.length === 1 ? "" : "s"} — AI-extracted requirements, deliverables, and Q&amp;A</p>
       </div>
 
