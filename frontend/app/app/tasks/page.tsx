@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LayoutGrid, List, Search } from "lucide-react";
+import { LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
@@ -14,8 +14,9 @@ import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Kanban } from "@/components/viz/Kanban";
+import { TaskFormModal } from "@/components/forms/TaskFormModal";
 import { formatDate, titleCase } from "@/lib/utils";
-import { buildOfflineTasks, withOfflineFallback } from "@/lib/offlinePreview";
+import { buildOfflineTasks, buildOfflineProjects, buildOfflineResources, withOfflineFallback } from "@/lib/offlinePreview";
 
 const STATUS_OPTIONS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"];
 const PRIORITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -25,14 +26,35 @@ export default function TasksPage() {
   const { isDemo } = useAuth();
   const { push } = useToast();
   const tasksApi = useApi(() => withOfflineFallback(() => api.allTasks(), buildOfflineTasks), []);
+  const projectsApi = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
+  const resourcesApi = useApi(() => withOfflineFallback(() => api.resources(), buildOfflineResources), []);
   const [view, setView] = useState<"table" | "kanban">("table");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [localTasks, setLocalTasks] = useState<Task[] | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const offline = tasksApi.data?.offline ?? false;
   const tasks = localTasks ?? tasksApi.data?.data ?? EMPTY_TASKS;
+
+  function handleCreated(task: Task) {
+    setLocalTasks([task, ...tasks]);
+    push("Task created", "success");
+  }
+
+  async function handleDelete(task: Task) {
+    if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return;
+    const prev = tasks;
+    setLocalTasks(tasks.filter((t) => t.id !== task.id));
+    try {
+      await api.deleteTask(task.id);
+      push("Task deleted", "success");
+    } catch (err) {
+      setLocalTasks(prev);
+      push(err instanceof Error ? err.message : "Could not delete the task", "error");
+    }
+  }
 
   const filtered = useMemo(() => {
     return tasks.filter((t) => {
@@ -80,6 +102,17 @@ export default function TasksPage() {
       sortValue: (t) => t.completion_percentage,
       render: (t) => <span className="font-tabular">{t.completion_percentage}%</span>,
     },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      width: "48px",
+      render: (t) => (
+        <Button variant="ghost" size="icon" aria-label={`Delete ${t.title}`} onClick={() => handleDelete(t)}>
+          <Trash2 className="h-4 w-4 text-text-tertiary" />
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -89,7 +122,7 @@ export default function TasksPage() {
           <h1 className="text-xl font-semibold text-text-primary">Tasks</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {tasks.length} tasks across all projects</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {offline && <OfflinePreviewBanner onRetry={tasksApi.reload} subject="tasks" inline />}
           <div className="flex items-center gap-1 rounded-md border border-border-default p-0.5">
             <Button variant={view === "table" ? "secondary" : "ghost"} size="sm" onClick={() => setView("table")} aria-pressed={view === "table"}>
@@ -99,8 +132,20 @@ export default function TasksPage() {
               <LayoutGrid className="h-4 w-4" /> Kanban
             </Button>
           </div>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> New task
+          </Button>
         </div>
       </div>
+
+      <TaskFormModal
+        key={createOpen ? "open" : "closed"}
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        projects={projectsApi.data?.data}
+        resources={resourcesApi.data?.data}
+        onCreated={handleCreated}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative w-full sm:w-64">

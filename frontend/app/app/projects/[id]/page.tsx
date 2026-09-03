@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
   Bar,
@@ -14,10 +14,11 @@ import {
   YAxis,
   Legend,
 } from "recharts";
-import { Dices, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Dices, Plus, SquarePen, Sparkles, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
+import { useToast } from "@/components/ui/Toast";
 import { PMO_COMMAND_EVENT, type PmoCommandDetail } from "@/lib/commands";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { AISourceBadge, Badge, priorityTone, projectStatusTone, riskLevelTone, taskStatusTone, type SemanticTone } from "@/components/ui/Badge";
@@ -32,6 +33,8 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { Spinner } from "@/components/ui/LoadingState";
 import { Button } from "@/components/ui/Button";
 import { TypewriterText } from "@/components/ui/TypewriterText";
+import { TaskFormModal } from "@/components/forms/TaskFormModal";
+import { RiskFormModal } from "@/components/forms/RiskFormModal";
 import { Gantt } from "@/components/viz/Gantt";
 import { Timeline } from "@/components/viz/Timeline";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
@@ -63,30 +66,8 @@ type BudgetData = { budget: Budget; transactions: BudgetTransaction[]; actual_co
 // tabs (any of this page's ~9 independent useApi hooks resolving). That broke DataTable's internal
 // `sorted` useMemo (it depended on `columns` by reference) every single time, forcing a pointless
 // re-sort. Module scope makes the reference stable for real, on top of the DataTable-level fix below.
-const taskColumns: Column<Task>[] = [
-  { key: "title", header: "Task", sortValue: (t) => t.title, render: (t) => <span className="font-medium text-text-primary">{t.title}</span> },
-  { key: "status", header: "Status", sortValue: (t) => t.status, render: (t) => <Badge tone={taskStatusTone(t.status)}>{titleCase(t.status)}</Badge> },
-  { key: "priority", header: "Priority", sortValue: (t) => t.priority, render: (t) => <Badge tone={priorityTone(t.priority)}>{titleCase(t.priority)}</Badge> },
-  { key: "assignee", header: "Assignee", render: (t) => t.assignee_name ?? <span className="text-text-tertiary">Unassigned</span> },
-  { key: "due", header: "Due", align: "right", sortValue: (t) => t.due_date ?? "", render: (t) => <span className="font-tabular">{formatDate(t.due_date)}</span> },
-  {
-    key: "completion",
-    header: "Progress",
-    align: "right",
-    sortValue: (t) => t.completion_percentage,
-    render: (t) => <span className="font-tabular">{t.completion_percentage}%</span>,
-  },
-];
-
-const riskColumns: Column<Risk>[] = [
-  { key: "title", header: "Risk", sortValue: (r) => r.title, render: (r) => <span className="font-medium text-text-primary">{r.title}</span> },
-  { key: "category", header: "Category", sortValue: (r) => r.category, render: (r) => titleCase(r.category) },
-  { key: "score", header: "Score", align: "right", sortValue: (r) => r.score, render: (r) => <span className="font-tabular">{r.probability} × {r.impact} = {r.score}</span> },
-  { key: "severity", header: "Severity", sortValue: (r) => r.score, render: (r) => <Badge tone={riskLevelTone(r.severity)}>{r.severity}</Badge> },
-  { key: "owner", header: "Owner", render: (r) => r.owner ?? "—" },
-  { key: "status", header: "Status", sortValue: (r) => r.status, render: (r) => titleCase(r.status) },
-];
-
+// (Task/Risk columns moved to a component-level useMemo below — their actions column closes over
+// the delete/edit handlers, so they can no longer live at module scope.)
 const teamColumns: Column<TeamRow>[] = [
   {
     key: "name",
@@ -137,6 +118,147 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       resource: resources.data!.find((r) => r.id === a.resource_id),
     }));
   }, [allocations.data, resources.data]);
+
+  const { push } = useToast();
+
+  // Local overrides layered on top of tasks.reload()/risks.reload() so create/edit/delete update
+  // the on-screen table and RiskMatrix instantly (no DataTable skeleton flash). Health/forecast
+  // aren't overridden the same way — those are real server-computed EVM/health formulas (see
+  // app/services/health_score.py, cost_forecast.py); reloading them for real after a mutation is
+  // what "instant reactivity" honestly means here, rather than re-deriving the same math client-side
+  // and risking it drifting from the backend's numbers.
+  const [localTasks, setLocalTasks] = useState<Task[] | null>(null);
+  const [localRisks, setLocalRisks] = useState<Risk[] | null>(null);
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
+  const [riskFormOpen, setRiskFormOpen] = useState(false);
+  const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
+  const taskRows = localTasks ?? tasks.data ?? [];
+  const riskRows = localRisks ?? risks.data ?? [];
+
+  const handleTaskCreated = useCallback(
+    (task: Task) => {
+      setLocalTasks([task, ...(localTasks ?? tasks.data ?? [])]);
+      push("Task created", "success");
+      health.reload();
+      forecast.reload();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload()/push are stable; localTasks/tasks.data read fresh via closure on each open
+    [tasks.data, localTasks],
+  );
+
+  const handleTaskDelete = useCallback(
+    async (task: Task) => {
+      if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return;
+      const prev = taskRows;
+      setLocalTasks(prev.filter((t) => t.id !== task.id));
+      try {
+        await api.deleteTask(task.id);
+        push("Task deleted", "success");
+        health.reload();
+        forecast.reload();
+      } catch (err) {
+        setLocalTasks(prev);
+        push(err instanceof Error ? err.message : "Could not delete the task", "error");
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taskRows],
+  );
+
+  const handleRiskSaved = useCallback(
+    (risk: Risk) => {
+      const rows = localRisks ?? risks.data ?? [];
+      const exists = rows.some((r) => r.id === risk.id);
+      setLocalRisks(exists ? rows.map((r) => (r.id === risk.id ? risk : r)) : [risk, ...rows]);
+      push(exists ? "Risk updated" : "Risk added", "success");
+      health.reload();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [risks.data, localRisks],
+  );
+
+  const handleRiskDelete = useCallback(
+    async (risk: Risk) => {
+      if (!window.confirm(`Delete "${risk.title}"? This can't be undone.`)) return;
+      const prev = riskRows;
+      setLocalRisks(prev.filter((r) => r.id !== risk.id));
+      try {
+        await api.deleteRisk(risk.id);
+        push("Risk deleted", "success");
+        health.reload();
+      } catch (err) {
+        setLocalRisks(prev);
+        push(err instanceof Error ? err.message : "Could not delete the risk", "error");
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [riskRows],
+  );
+
+  const taskColumns = useMemo<Column<Task>[]>(
+    () => [
+      { key: "title", header: "Task", sortValue: (t) => t.title, render: (t) => <span className="font-medium text-text-primary">{t.title}</span> },
+      { key: "status", header: "Status", sortValue: (t) => t.status, render: (t) => <Badge tone={taskStatusTone(t.status)}>{titleCase(t.status)}</Badge> },
+      { key: "priority", header: "Priority", sortValue: (t) => t.priority, render: (t) => <Badge tone={priorityTone(t.priority)}>{titleCase(t.priority)}</Badge> },
+      { key: "assignee", header: "Assignee", render: (t) => t.assignee_name ?? <span className="text-text-tertiary">Unassigned</span> },
+      { key: "due", header: "Due", align: "right", sortValue: (t) => t.due_date ?? "", render: (t) => <span className="font-tabular">{formatDate(t.due_date)}</span> },
+      {
+        key: "completion",
+        header: "Progress",
+        align: "right",
+        sortValue: (t) => t.completion_percentage,
+        render: (t) => <span className="font-tabular">{t.completion_percentage}%</span>,
+      },
+      {
+        key: "actions",
+        header: "",
+        align: "right",
+        width: "48px",
+        render: (t) => (
+          <Button variant="ghost" size="icon" aria-label={`Delete ${t.title}`} onClick={() => handleTaskDelete(t)}>
+            <Trash2 className="h-4 w-4 text-text-tertiary" />
+          </Button>
+        ),
+      },
+    ],
+    [handleTaskDelete],
+  );
+
+  const riskColumns = useMemo<Column<Risk>[]>(
+    () => [
+      { key: "title", header: "Risk", sortValue: (r) => r.title, render: (r) => <span className="font-medium text-text-primary">{r.title}</span> },
+      { key: "category", header: "Category", sortValue: (r) => r.category, render: (r) => titleCase(r.category) },
+      { key: "score", header: "Score", align: "right", sortValue: (r) => r.score, render: (r) => <span className="font-tabular">{r.probability} × {r.impact} = {r.score}</span> },
+      { key: "severity", header: "Severity", sortValue: (r) => r.score, render: (r) => <Badge tone={riskLevelTone(r.severity)}>{r.severity}</Badge> },
+      { key: "owner", header: "Owner", render: (r) => r.owner ?? "—" },
+      { key: "status", header: "Status", sortValue: (r) => r.status, render: (r) => titleCase(r.status) },
+      {
+        key: "actions",
+        header: "",
+        align: "right",
+        width: "84px",
+        render: (r) => (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Edit ${r.title}`}
+              onClick={() => {
+                setEditingRisk(r);
+                setRiskFormOpen(true);
+              }}
+            >
+              <SquarePen className="h-4 w-4 text-text-tertiary" />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label={`Delete ${r.title}`} onClick={() => handleRiskDelete(r)}>
+              <Trash2 className="h-4 w-4 text-text-tertiary" />
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [handleRiskDelete],
+  );
 
   // Command-bar action commands (lib/commands.ts's PMO_COMMAND_EVENT — "Generate Boardroom Memo
   // for this project" / "Run Monte Carlo Simulation for this project") need to (1) switch to the
@@ -227,7 +349,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             content: tasks.error ? (
               <ErrorState description={tasks.error.message} onRetry={tasks.reload} />
             ) : (
-              <DataTable columns={taskColumns} rows={tasks.data ?? []} loading={tasks.loading} getRowKey={(t) => t.id} emptyTitle="No tasks yet" />
+              <div className="space-y-4">
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setTaskFormOpen(true)}>
+                    <Plus className="h-4 w-4" /> New task
+                  </Button>
+                </div>
+                <DataTable columns={taskColumns} rows={taskRows} loading={tasks.loading && localTasks === null} getRowKey={(t) => t.id} emptyTitle="No tasks yet" />
+              </div>
             ),
           },
           {
@@ -260,14 +389,29 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           {
             id: "risks",
             label: "Risks",
-            content: risks.loading ? (
-              <Spinner />
-            ) : (risks.data ?? []).length === 0 ? (
-              <EmptyState title="No risks logged" />
-            ) : (
-              <div className="space-y-6">
-                <RiskMatrix risks={risks.data ?? []} />
-                <DataTable columns={riskColumns} rows={risks.data ?? []} getRowKey={(r) => r.id} emptyTitle="No risks logged" />
+            content: (
+              <div className="space-y-4">
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingRisk(null);
+                      setRiskFormOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" /> Add risk
+                  </Button>
+                </div>
+                {risks.loading && localRisks === null ? (
+                  <Spinner />
+                ) : riskRows.length === 0 ? (
+                  <EmptyState title="No risks logged" />
+                ) : (
+                  <div className="space-y-6">
+                    <RiskMatrix risks={riskRows} />
+                    <DataTable columns={riskColumns} rows={riskRows} getRowKey={(r) => r.id} emptyTitle="No risks logged" />
+                  </div>
+                )}
               </div>
             ),
           },
@@ -288,6 +432,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             ),
           },
         ]}
+      />
+
+      <TaskFormModal
+        key={taskFormOpen ? "open" : "closed"}
+        open={taskFormOpen}
+        onClose={() => setTaskFormOpen(false)}
+        projectId={id}
+        resources={resources.data ?? undefined}
+        onCreated={handleTaskCreated}
+      />
+      <RiskFormModal
+        key={`${riskFormOpen}-${editingRisk?.id ?? "new"}`}
+        open={riskFormOpen}
+        onClose={() => setRiskFormOpen(false)}
+        projectId={id}
+        risk={editingRisk}
+        onSaved={handleRiskSaved}
       />
     </div>
   );

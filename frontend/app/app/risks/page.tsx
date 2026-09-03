@@ -1,21 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Plus, Search, SquarePen, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { Risk } from "@/lib/types";
 import { Badge, riskLevelTone } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Spinner } from "@/components/ui/LoadingState";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
 import { RiskRadar } from "@/components/viz/RiskRadar";
+import { RiskFormModal } from "@/components/forms/RiskFormModal";
+import { useToast } from "@/components/ui/Toast";
 import { titleCase } from "@/lib/utils";
-import { buildOfflineRisks, withOfflineFallback } from "@/lib/offlinePreview";
+import { buildOfflineRisks, buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
 
 const CATEGORY_OPTIONS = ["SCHEDULE", "BUDGET", "RESOURCE", "TECHNICAL", "SECURITY", "OPERATIONAL", "DEPENDENCY", "EXTERNAL"];
 const SEVERITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -24,13 +27,52 @@ const EMPTY_RISKS: (Risk & { project_name?: string })[] = [];
 
 export default function RisksPage() {
   const risksApi = useApi(() => withOfflineFallback(() => api.allRisks(), buildOfflineRisks), []);
+  const projectsApi = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
+  const { push } = useToast();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [severity, setSeverity] = useState("");
   const [status, setStatus] = useState("");
+  const [localRisks, setLocalRisks] = useState<(Risk & { project_name?: string })[] | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
 
   const offline = risksApi.data?.offline ?? false;
-  const risks = risksApi.data?.data ?? EMPTY_RISKS;
+  const risks = localRisks ?? risksApi.data?.data ?? EMPTY_RISKS;
+
+  function projectNameFor(projectId: string) {
+    return projectsApi.data?.data?.find((p) => p.id === projectId)?.name;
+  }
+
+  function handleSaved(risk: Risk) {
+    const withProjectName = { ...risk, project_name: projectNameFor(risk.project_id) };
+    const exists = risks.some((r) => r.id === risk.id);
+    setLocalRisks(exists ? risks.map((r) => (r.id === risk.id ? withProjectName : r)) : [withProjectName, ...risks]);
+    push(exists ? "Risk updated" : "Risk added", "success");
+  }
+
+  async function handleDelete(risk: Risk) {
+    if (!window.confirm(`Delete "${risk.title}"? This can't be undone.`)) return;
+    const prev = risks;
+    setLocalRisks(risks.filter((r) => r.id !== risk.id));
+    try {
+      await api.deleteRisk(risk.id);
+      push("Risk deleted", "success");
+    } catch (err) {
+      setLocalRisks(prev);
+      push(err instanceof Error ? err.message : "Could not delete the risk", "error");
+    }
+  }
+
+  function openCreate() {
+    setEditingRisk(null);
+    setFormOpen(true);
+  }
+
+  function openEdit(risk: Risk) {
+    setEditingRisk(risk);
+    setFormOpen(true);
+  }
 
   const filtered = useMemo(() => {
     return risks.filter((r) => {
@@ -50,6 +92,22 @@ export default function RisksPage() {
     { key: "severity", header: "Severity", sortValue: (r) => r.score, render: (r) => <Badge tone={riskLevelTone(r.severity)}>{r.severity}</Badge> },
     { key: "owner", header: "Owner", render: (r) => r.owner ?? "—" },
     { key: "status", header: "Status", sortValue: (r) => r.status, render: (r) => titleCase(r.status) },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      width: "84px",
+      render: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button variant="ghost" size="icon" aria-label={`Edit ${r.title}`} onClick={() => openEdit(r)}>
+            <SquarePen className="h-4 w-4 text-text-tertiary" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label={`Delete ${r.title}`} onClick={() => handleDelete(r)}>
+            <Trash2 className="h-4 w-4 text-text-tertiary" />
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -59,8 +117,22 @@ export default function RisksPage() {
           <h1 className="text-xl font-semibold text-text-primary">Risk Register</h1>
           <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {risks.length} risks across the portfolio</p>
         </div>
-        {offline && <OfflinePreviewBanner onRetry={risksApi.reload} subject="risk data" inline className="mt-1" />}
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          {offline && <OfflinePreviewBanner onRetry={risksApi.reload} subject="risk data" inline />}
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4" /> Add risk
+          </Button>
+        </div>
       </div>
+
+      <RiskFormModal
+        key={`${formOpen}-${editingRisk?.id ?? "new"}`}
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        projects={projectsApi.data?.data}
+        risk={editingRisk}
+        onSaved={handleSaved}
+      />
 
       <>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
