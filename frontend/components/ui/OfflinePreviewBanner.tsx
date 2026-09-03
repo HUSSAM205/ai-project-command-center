@@ -2,17 +2,19 @@ import { WifiOff } from "lucide-react";
 
 /** Shown whenever a page has fallen back to lib/offlinePreview.ts's illustrative data — never
  * silent, so a visitor (or the org's own team) can never mistake fabricated numbers for real
- * production data. Same visual treatment everywhere it appears (PMO, Consulting, and the core
- * list pages) so it reads as one consistent system state, not a one-off error box. */
+ * production data. Deliberately a small, quiet inline note rather than a full-width colored
+ * alert box: what it's disclosing is "this is a preview, not live figures" — an ambient system
+ * state, not an incident that needs the reader's attention grabbed. Muted/neutral tone throughout
+ * (no warning-amber) for the same reason. Same treatment everywhere it appears so it reads as one
+ * consistent, calm signal rather than a one-off error. */
 export function OfflinePreviewBanner({ onRetry, subject = "data" }: { onRetry: () => void; subject?: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-warning-border bg-warning-bg px-3.5 py-2.5 text-sm text-warning-fg">
-      <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+    <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
+      <WifiOff className="h-3 w-3 shrink-0" aria-hidden="true" />
       <span>
-        Live backend unreachable — showing an offline preview with illustrative {subject}, not your organization&apos;s real
-        figures.
+        Preview data — illustrative {subject}, not your organization&apos;s live figures.
       </span>
-      <button type="button" onClick={onRetry} className="ml-auto shrink-0 font-medium underline underline-offset-2">
+      <button type="button" onClick={onRetry} className="font-medium text-text-secondary underline underline-offset-2 hover:text-text-primary">
         Retry
       </button>
     </div>

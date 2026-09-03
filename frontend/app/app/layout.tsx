@@ -43,7 +43,11 @@ const STREAM_STATUS_LABEL: Record<StreamStatus, string> = {
   connecting: "Enterprise Node · Connecting…",
   live: "Enterprise Node · Production Active",
   reconnecting: "Enterprise Node · Reconnecting…",
-  offline: "Enterprise Node · Stream Offline",
+  // Same reasoning as LiveIndicator.tsx: this almost always means a routine free-tier cold start,
+  // actively retrying every few seconds, not a genuine outage — "Reconnecting" describes that
+  // more accurately than "Offline" and doesn't read as an alarm for something that resolves
+  // itself within moments.
+  offline: "Enterprise Node · Reconnecting…",
 };
 
 function WorkspaceStreamStatus({ status }: { status: StreamStatus }) {

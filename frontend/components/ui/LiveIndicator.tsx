@@ -6,7 +6,10 @@ const CONFIG: Record<StreamStatus, { label: string; dot: string; pulse: boolean 
   connecting: { label: "Connecting…", dot: "bg-text-tertiary", pulse: false },
   live: { label: "Live", dot: "bg-success-solid", pulse: true },
   reconnecting: { label: "Reconnecting…", dot: "bg-warning-solid", pulse: false },
-  offline: { label: "Offline", dot: "bg-critical-solid", pulse: false },
+  // Warning-amber, not critical-red: "offline" here almost always means the free-tier backend is
+  // mid cold-start (see docs/DEPLOYMENT_HANDOVER.md), not a genuine incident — reserving red for
+  // an actual outage keeps the color meaningful instead of crying wolf on routine wake-ups.
+  offline: { label: "Reconnecting…", dot: "bg-warning-solid", pulse: false },
 };
 
 /**
