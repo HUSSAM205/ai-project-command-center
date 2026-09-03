@@ -6,15 +6,20 @@ aspirational.
 
 ## Live public URLs
 
-- **Frontend (Vercel, production):** https://ai-project-mgmt-system.vercel.app (branded alias) or
-  https://frontend-eta-one-77.vercel.app (original alias — kept working, both point at the same
-  production deployment). The exact requested alias `ai-project-management-system.vercel.app` was
-  already claimed by an unrelated Vercel account — `.vercel.app` is a shared global namespace, not
-  scoped per-account, so it couldn't be taken; `ai-project-mgmt-system` was the closest available
-  match. No code hardcodes either hostname (no `metadataBase`/canonical URL is set anywhere in the
-  app), so nothing else needed to change for this to work — both aliases already serve identically.
+- **Frontend (Vercel, production) — primary public URL:** https://frontend-eta-one-77.vercel.app
 - **Backend API / Swagger docs (Render):** https://ai-project-command-center-backend.onrender.com/docs
 - **Backend health check:** https://ai-project-command-center-backend.onrender.com/health
+
+A second alias, `ai-project-mgmt-system.vercel.app`, also points at the same production
+deployment (the exact requested `ai-project-management-system.vercel.app` was already claimed by
+an unrelated Vercel account — `.vercel.app` is a shared global namespace, not scoped per-account —
+so this was the closest available match). **It is not the one to share**: it sits behind Vercel's
+own Deployment Protection (Vercel Authentication), which gates it behind a Vercel-account login
+unlike the primary URL above; fixing that requires a Vercel *project settings* change (Settings →
+Deployment Protection), not a CLI action, and the account owner chose to keep
+`frontend-eta-one-77.vercel.app` as the one public URL rather than change that setting. No code
+hardcodes either hostname (no `metadataBase`/canonical URL is set anywhere in the app), so nothing
+else needed to change.
 
 The frontend talks to the backend through a same-origin reverse proxy (`frontend/next.config.ts`
 `rewrites()`, `BACKEND_ORIGIN` env var set to the Render URL) — the browser never makes a
