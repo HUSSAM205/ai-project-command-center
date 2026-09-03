@@ -140,7 +140,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-700 text-xs font-bold text-white">
               AC
             </span>
-            <span className="text-sm font-semibold text-text-primary leading-tight">
+            <span className="bg-gradient-to-r from-text-primary via-text-primary to-text-tertiary bg-clip-text text-sm font-semibold leading-tight text-transparent">
               AI Project
               <br />
               Management System
@@ -209,7 +209,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
             </>
           }
         />
-        <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="canvas-texture flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8">{children}</main>
       </div>
 
       <CommandBar />

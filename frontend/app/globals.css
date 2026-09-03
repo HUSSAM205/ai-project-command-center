@@ -302,3 +302,15 @@ body {
     animation: none;
   }
 }
+
+/* Ambient texture for the main app-shell canvas — a faint fixed dot grid, deliberately low
+   contrast (WCAG "gridline-subtle": grid must not compete with data) so it reads as a quiet
+   surface texture, never as chart gridlines or a decorative distraction. CSS-only (no image,
+   no JS), so it costs nothing at runtime and needs no reduced-motion handling since it never
+   animates. Dark theme only (this app toggles dark via a `.dark` class on <html> — see
+   ThemeToggle.tsx — not prefers-color-scheme) — the light theme's near-white canvas doesn't need it. */
+.dark .canvas-texture {
+  background-image: radial-gradient(circle, var(--border-default) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -14px -14px;
+}

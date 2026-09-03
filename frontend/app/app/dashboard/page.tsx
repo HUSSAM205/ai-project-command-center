@@ -139,7 +139,9 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Portfolio Dashboard</h1>
+          <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
+            Portfolio Dashboard
+          </h1>
           <p className="mt-1 text-sm text-text-tertiary">A real-time view across every active initiative.</p>
         </div>
         <LiveIndicator status={dashboard.status} className="mt-1" />

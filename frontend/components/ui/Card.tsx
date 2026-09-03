@@ -1,10 +1,18 @@
 import { type HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
+/** Stays opaque (no blur/transparency) even in the dark theme — cards routinely sit over dense
+ * financial/risk tables, and a translucent surface there would blur the exact hierarchy WCAG
+ * asks a card to establish. The "richer surface" ask is met with a restrained border/shadow
+ * lift on hover instead — real depth cue, zero readability cost. Deliberate floating overlays
+ * (CommandBar, Drawer) use `.glass-surface` from globals.css instead of this component. */
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("rounded-lg border border-border-default bg-surface shadow-elevation-1", className)}
+      className={cn(
+        "rounded-lg border border-border-default bg-surface shadow-elevation-1 transition-[border-color,box-shadow] duration-200 hover:border-brand-500/40 hover:shadow-elevation-2",
+        className,
+      )}
       {...props}
     />
   );

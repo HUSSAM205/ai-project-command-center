@@ -136,8 +136,8 @@ export default function DocumentsPage() {
         <div className="flex items-center gap-2 rounded-md border border-info-border bg-info-bg px-3.5 py-2.5 text-sm text-info-fg">
           <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
-            This is a read-only session — dropping a file below runs a local preview (parsing and chunk estimation only, in your
-            browser) instead of a real upload. Nothing is sent to the server or saved. Get full account access to upload for real.
+            Dropping a file below runs a local preview (parsing and chunk estimation only, in your browser) instead of a
+            real upload. Nothing is sent to the server or saved. Get full account access to upload for real.
           </span>
         </div>
       )}
