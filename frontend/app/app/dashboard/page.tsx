@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -15,12 +17,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Calendar, Sparkles } from "lucide-react";
+import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useDashboardStream } from "@/lib/useDashboardStream";
 import type { Project, ProjectStatus, Resource, Risk } from "@/lib/types";
-import { MetricCard } from "@/components/ui/MetricCard";
 import { MotionCard } from "@/components/ui/MotionCard";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
@@ -33,8 +34,8 @@ import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, QuickSummaryBadge, SOLID_COLORS } from "@/components/ui/Badge";
 import { RiskRadar } from "@/components/viz/RiskRadar";
 import { buildLocalExecutiveBrief } from "@/lib/localExecutiveBrief";
-import { formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
-import { cardHover, crossFade, staggerContainer, staggerItem } from "@/lib/motion";
+import { cn, formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
+import { crossFade, staggerContainer, staggerItem } from "@/lib/motion";
 import {
   buildOfflineDashboard,
   buildOfflineProjects,
@@ -87,6 +88,14 @@ export default function DashboardPage() {
 
   const worstHealthProjects = useMemo(() => {
     return [...projectsList].sort((a, b) => a.health_score - b.health_score).slice(0, 6);
+  }, [projectsList]);
+
+  // Same health_score field every project row already carries, just re-sorted into a curve shape
+  // (low to high) instead of a list — no new metric, only a different lens on it for Card A below.
+  const healthCurve = useMemo(() => {
+    return [...projectsList]
+      .sort((a, b) => a.health_score - b.health_score)
+      .map((p, i) => ({ rank: i + 1, score: p.health_score }));
   }, [projectsList]);
 
   // Executive Brief resilient fallback (Task 1): the real GET /api/v1/ai/executive-brief call is
@@ -169,49 +178,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI row */}
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-2 gap-4 md:grid-cols-4"
-      >
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Total Projects" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-4 w-4" />} />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Active" value={<AnimatedNumber value={d.active_projects} />} icon={<PlayCircle className="h-4 w-4" />} />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Completed" value={<AnimatedNumber value={d.completed_projects} />} icon={<CheckCircle2 className="h-4 w-4" />} />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard
-            label="At Risk"
-            value={<AnimatedNumber value={d.at_risk_projects} />}
-            icon={<AlertTriangle className="h-4 w-4" />}
-            deltaTone={d.at_risk_projects > 0 ? "critical" : "neutral"}
-          />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Avg. Health Score" value={<AnimatedNumber value={d.avg_health_score} format={(n) => Math.round(n).toString()} />} hint="Portfolio-wide average" />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Budget Utilization" value={<AnimatedNumber value={d.budget_utilization_pct} format={(n) => formatPercent(n)} />} hint="Actual vs. total budget" />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard label="Resource Utilization" value={<AnimatedNumber value={d.resource_utilization_pct} format={(n) => formatPercent(n)} />} hint="Allocated vs. capacity" />
-        </motion.div>
-        <motion.div variants={staggerItem} whileHover={cardHover}>
-          <MetricCard
-            label="Upcoming Deadlines"
-            value={<AnimatedNumber value={d.upcoming_deadlines?.length ?? 0} />}
-            icon={<Calendar className="h-4 w-4" />}
-            hint="Next 30 days"
-          />
-        </motion.div>
-      </motion.div>
-
       {/* Executive AI Brief — Demo AI mode by default (no live provider keys configured); the
           badge always reflects the real source, never implies a live model ran when it didn't. */}
       <MotionCard>
@@ -265,56 +231,98 @@ export default function DashboardPage() {
         </CardContent>
       </MotionCard>
 
+      {/* Bento grid — same four data sources the old flat KPI/card rows used (projects, risks,
+          resources, budget), just regrouped by subject into asymmetric cells instead of a uniform
+          stack of same-size boxes. No new fetch, no new computation. */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        {/* Portfolio health */}
+        {/* Card A — Portfolio health & status */}
         <MotionCard className="lg:col-span-2">
           <CardHeader>
             <div>
-              <CardTitle>Portfolio Health</CardTitle>
-              <CardDescription>Lowest-scoring projects surfaced first</CardDescription>
+              <CardTitle>Portfolio Health &amp; Status</CardTitle>
+              <CardDescription>Score distribution across every active initiative</CardDescription>
             </div>
             <Link href="/app/projects" className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
               View all
             </Link>
           </CardHeader>
           <CardContent>
-            {worstHealthProjects.length === 0 ? (
-              <EmptyState title="No projects yet" />
-            ) : (
-              <motion.ul variants={staggerContainer} initial="hidden" animate="show" className="divide-y divide-border-default">
-                {worstHealthProjects.map((p) => (
-                  <motion.li key={p.id} variants={staggerItem} className="flex items-center gap-4 py-3">
-                    <HealthGauge score={p.health_score} size={44} />
-                    <div className="min-w-0 flex-1">
-                      <Link href={`/app/projects/${p.id}`} className="truncate text-sm font-medium text-text-primary hover:underline">
-                        {p.name}
-                      </Link>
-                      <p className="text-xs text-text-tertiary">{p.client ?? "Internal"}</p>
-                    </div>
-                    <Badge tone={riskLevelTone(p.risk_level)}>{p.risk_level}</Badge>
-                  </motion.li>
-                ))}
-              </motion.ul>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <StatChip label="Total" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-3.5 w-3.5" />} />
+              <StatChip label="Active" value={<AnimatedNumber value={d.active_projects} />} icon={<PlayCircle className="h-3.5 w-3.5" />} />
+              <StatChip label="Completed" value={<AnimatedNumber value={d.completed_projects} />} icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
+              <StatChip
+                label="At Risk"
+                value={<AnimatedNumber value={d.at_risk_projects} />}
+                icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                tone={d.at_risk_projects > 0 ? "critical" : "neutral"}
+              />
+              <StatChip label="Avg. Health" value={<AnimatedNumber value={d.avg_health_score} format={(n) => Math.round(n).toString()} />} />
+            </div>
+
+            {healthCurve.length > 1 && (
+              <div className="mt-4 h-20">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={healthCurve} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="healthCurveFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--brand-500)" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="var(--brand-500)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <YAxis hide domain={[0, 100]} />
+                    <RTooltip contentStyle={tooltipStyle} labelFormatter={() => "Health score"} formatter={(v) => [String(v), "Score"]} />
+                    <Area type="monotone" dataKey="score" stroke="var(--brand-500)" strokeWidth={2} fill="url(#healthCurveFill)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             )}
+
+            <div className="mt-4 border-t border-border-default pt-3">
+              {worstHealthProjects.length === 0 ? (
+                <EmptyState title="No projects yet" />
+              ) : (
+                <motion.ul variants={staggerContainer} initial="hidden" animate="show" className="divide-y divide-border-default">
+                  {worstHealthProjects.map((p) => (
+                    <motion.li key={p.id} variants={staggerItem} className="flex items-center gap-4 py-3">
+                      <HealthGauge score={p.health_score} size={44} />
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/app/projects/${p.id}`} className="truncate text-sm font-medium text-text-primary hover:underline">
+                          {p.name}
+                        </Link>
+                        <p className="text-xs text-text-tertiary">{p.client ?? "Internal"}</p>
+                      </div>
+                      <Badge tone={riskLevelTone(p.risk_level)}>{p.risk_level}</Badge>
+                    </motion.li>
+                  ))}
+                </motion.ul>
+              )}
+            </div>
           </CardContent>
         </MotionCard>
 
-        {/* Risk landscape */}
+        {/* Card B — Risk metrics & containment */}
         <MotionCard>
           <CardHeader>
             <div>
-              <CardTitle>Risk Landscape</CardTitle>
-              <CardDescription>Open risks by severity</CardDescription>
+              <CardTitle>Risk Metrics &amp; Containment</CardTitle>
+              <CardDescription>Open register by severity and category</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
+            <StatChip
+              label="Open Risks"
+              value={<AnimatedNumber value={riskEntries.reduce((s, [, v]) => s + v, 0)} />}
+              tone={riskEntries.some(([k]) => k === "CRITICAL") ? "critical" : "neutral"}
+              className="mb-3"
+            />
             {riskEntries.length === 0 ? (
               <EmptyState title="No risks recorded" />
             ) : (
-              <div className="h-48">
+              <div className="h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={riskEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={44} outerRadius={68} paddingAngle={3} cornerRadius={6} stroke="var(--bg-surface)" strokeWidth={2}>
+                    <Pie data={riskEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={3} cornerRadius={6} stroke="var(--bg-surface)" strokeWidth={2}>
                       {riskEntries.map(([k]) => (
                         <Cell key={k} fill={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} />
                       ))}
@@ -335,38 +343,68 @@ export default function DashboardPage() {
                 </li>
               ))}
             </ul>
+
+            {/* Same risk register, a different lens (severity-weighted score by category rather
+                than a count by severity bucket). Real data via api.allRisks(). */}
+            <div className="mt-4 border-t border-border-default pt-3">
+              <p className="mb-1 text-xs font-medium text-text-tertiary">By category</p>
+              <RiskRadar risks={allRisksList} />
+            </div>
           </CardContent>
         </MotionCard>
 
-        {/* Risk categories — same risk register, a different lens (severity-weighted score by
-            category rather than a count by severity bucket). Real data via api.allRisks(). */}
+        {/* Card C — Resource capacity & allocation */}
         <MotionCard>
           <CardHeader>
             <div>
-              <CardTitle>Risk Categories</CardTitle>
-              <CardDescription>Severity-weighted score by category</CardDescription>
+              <CardTitle>Resource Capacity &amp; Allocation</CardTitle>
+              <CardDescription>Utilization across the bench</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
-            <RiskRadar risks={allRisksList} />
+            <StatChip
+              label="Resource Utilization"
+              value={<AnimatedNumber value={d.resource_utilization_pct} format={(n) => formatPercent(n)} />}
+              className="mb-4"
+            />
+            {resourcesList.length === 0 ? (
+              <EmptyState title="No resources yet" />
+            ) : (
+              <ul className="space-y-3">
+                {(["OVERLOADED", "OPTIMAL", "UNDERUTILIZED"] as const).map((state) => (
+                  <li key={state} className="flex items-center justify-between">
+                    <Badge tone={utilizationTone(state)} dot>
+                      {state}
+                    </Badge>
+                    <AnimatedNumber value={resourceCapacity[state]?.length ?? 0} className="text-sm font-medium text-text-primary" />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Link href="/app/resources" className="mt-4 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
+              View resource plan
+            </Link>
           </CardContent>
         </MotionCard>
-      </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Financial performance */}
-        <MotionCard className="lg:col-span-2">
+        {/* Card D — Financial performance, full width bottom tier */}
+        <MotionCard className="lg:col-span-4">
           <CardHeader>
             <div>
               <CardTitle>Financial Performance</CardTitle>
-              <CardDescription>Budget vs. actual cost by project</CardDescription>
+              <CardDescription>Budget vs. actual cost by project, portfolio-wide</CardDescription>
             </div>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <StatChip label="Budget Utilization" value={<AnimatedNumber value={d.budget_utilization_pct} format={(n) => formatPercent(n)} />} />
+              <StatChip label="Total Actual" value={<AnimatedNumber value={d.total_actual_cost} format={(n) => formatCompactCurrency(n)} />} />
+              <StatChip label="Total Budget" value={<AnimatedNumber value={d.total_budget} format={(n) => formatCompactCurrency(n)} />} />
+            </div>
             {financialData.length === 0 ? (
               <EmptyState title="No budget data yet" />
             ) : (
-              <div className="h-64">
+              <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={financialData} barGap={4}>
                     <defs>
@@ -398,40 +436,7 @@ export default function DashboardPage() {
             <div className="mt-3 flex items-center gap-4 text-xs text-text-tertiary">
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-neutral-300" /> Budget</span>
               <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-brand-500" /> Actual</span>
-              <span className="ml-auto font-tabular">
-                <AnimatedNumber value={d.total_actual_cost} format={(n) => formatCompactCurrency(n)} /> /{" "}
-                <AnimatedNumber value={d.total_budget} format={(n) => formatCompactCurrency(n)} />
-              </span>
             </div>
-          </CardContent>
-        </MotionCard>
-
-        {/* Resource capacity */}
-        <MotionCard>
-          <CardHeader>
-            <div>
-              <CardTitle>Resource Capacity</CardTitle>
-              <CardDescription>Utilization across the bench</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {resourcesList.length === 0 ? (
-              <EmptyState title="No resources yet" />
-            ) : (
-              <ul className="space-y-3">
-                {(["OVERLOADED", "OPTIMAL", "UNDERUTILIZED"] as const).map((state) => (
-                  <li key={state} className="flex items-center justify-between">
-                    <Badge tone={utilizationTone(state)} dot>
-                      {state}
-                    </Badge>
-                    <AnimatedNumber value={resourceCapacity[state]?.length ?? 0} className="text-sm font-medium text-text-primary" />
-                  </li>
-                ))}
-              </ul>
-            )}
-            <Link href="/app/resources" className="mt-4 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
-              View resource plan
-            </Link>
           </CardContent>
         </MotionCard>
       </div>
@@ -507,6 +512,32 @@ export default function DashboardPage() {
 
 function shortName(name: string) {
   return name.length > 16 ? name.slice(0, 15) + "…" : name;
+}
+
+// Compact stat readout for a bento cell's header area — deliberately lighter than MetricCard
+// (no border/blur/shadow of its own) since it lives inside a card that already has those.
+function StatChip({
+  label,
+  value,
+  icon,
+  tone = "neutral",
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  icon?: React.ReactNode;
+  tone?: "critical" | "neutral";
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-lg border border-border-default/60 bg-subtle/70 px-3 py-2", className)}>
+      <div className="flex items-center gap-1.5 text-text-tertiary">
+        {icon}
+        <p className="text-[11px] font-medium uppercase tracking-wide">{label}</p>
+      </div>
+      <p className={cn("mt-0.5 font-tabular text-lg font-semibold", tone === "critical" ? "text-critical-fg" : "text-text-primary")}>{value}</p>
+    </div>
+  );
 }
 
 const tooltipStyle = {

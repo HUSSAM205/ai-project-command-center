@@ -35,7 +35,11 @@ export function Tabs({
 
   return (
     <div>
-      <div role="tablist" aria-label="Section tabs" className="flex gap-1 border-b border-border-default overflow-x-auto">
+      <div
+        role="tablist"
+        aria-label="Section tabs"
+        className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border-default bg-subtle p-1"
+      >
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -45,13 +49,21 @@ export function Tabs({
             aria-controls={`panel-${tab.id}`}
             onClick={() => select(tab.id)}
             className={cn(
-              "relative flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] rounded-t-md",
-              active === tab.id ? "text-brand-700 dark:text-brand-300" : "text-text-tertiary hover:text-text-primary",
+              "relative shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]",
+              active === tab.id ? "text-white dark:text-neutral-950" : "text-text-tertiary hover:text-text-primary",
             )}
           >
-            {tab.label}
-            {tab.badge}
-            {active === tab.id && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-brand-600 dark:bg-brand-400" />}
+            {active === tab.id && (
+              <motion.span
+                layoutId="tab-pill-bg"
+                className="absolute inset-0 rounded-full bg-brand-600 dark:bg-brand-400"
+                transition={{ type: "spring", stiffness: 500, damping: 34 }}
+              />
+            )}
+            <span className="relative flex items-center gap-1.5">
+              {tab.label}
+              {tab.badge}
+            </span>
           </button>
         ))}
       </div>

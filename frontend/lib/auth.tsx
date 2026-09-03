@@ -76,6 +76,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
+  useEffect(() => {
+    // Dispatched by lib/api.ts when a real (non-demo) account's token expires mid-session. The
+    // token is already cleared at that point; this just resets in-memory state to match, so the
+    // app shell falls back to its existing unauthenticated view instead of showing stale user
+    // data next to requests that are now silently failing.
+    function handleSessionExpired() {
+      setUser(null);
+      setIsDemo(false);
+    }
+    window.addEventListener("aipcc:session-expired", handleSessionExpired);
+    return () => window.removeEventListener("aipcc:session-expired", handleSessionExpired);
+  }, []);
+
   const login = useCallback(async (email: string, password: string) => {
     const res = await api.login(email, password);
     setToken(res.access_token);

@@ -79,6 +79,36 @@ interface RequestOptions {
   // see backend/app/api/demo.py). Every other mutating call stays "one honest attempt, surfaced
   // to the user" — this must never be set for anything that creates/modifies/deletes real data.
   idempotent?: boolean;
+  // Internal — set automatically when re-issuing a request after a silent demo-session refresh
+  // (see `request()` below). Never set this from a call site.
+  retriedAfterRefresh?: boolean;
+}
+
+function isDemoSession(): boolean {
+  return typeof window !== "undefined" && window.localStorage.getItem("aipcc_demo") === "1";
+}
+
+// Demo sessions (the read-only session every visitor gets automatically — see lib/auth.tsx) issue
+// a short-lived JWT. If a tab sits open past expiry, the next call 401s with "token expired" and
+// previously crashed whatever page made it. Since a demo session carries no credentials worth
+// protecting (it's an anonymous read-only token, minted with no user input), the honest fix is to
+// transparently mint a fresh one and retry — the visitor never had to "log in" in the first place,
+// so silently re-establishing the same kind of session isn't hiding anything from them. A real
+// account's expiry is handled separately below: we never silently swap a signed-in user into an
+// anonymous demo session.
+let demoRefreshPromise: Promise<void> | null = null;
+function refreshDemoSession(): Promise<void> {
+  if (!demoRefreshPromise) {
+    demoRefreshPromise = request<AuthResponse>("/demo/session", { method: "POST", auth: false, idempotent: true })
+      .then((res) => {
+        setToken(res.access_token);
+        window.localStorage.setItem("aipcc_demo_user", JSON.stringify(res.user));
+      })
+      .finally(() => {
+        demoRefreshPromise = null;
+      });
+  }
+  return demoRefreshPromise;
 }
 
 // Render's free-tier backend sleeps after ~15 minutes with no traffic; waking it up can briefly
@@ -92,7 +122,7 @@ const GATEWAY_RETRY_STATUSES = new Set([502, 503, 504]);
 const GATEWAY_RETRY_DELAYS_MS = [800, 1600, 2800];
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, signal, auth = true, idempotent = false } = options;
+  const { method = "GET", body, signal, auth = true, idempotent = false, retriedAfterRefresh = false } = options;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
   if (auth) {
@@ -131,6 +161,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     } catch {
       // ignore body parse failure
     }
+
+    if (res.status === 401 && auth && !retriedAfterRefresh) {
+      if (isDemoSession()) {
+        try {
+          await refreshDemoSession();
+          return request<T>(path, { ...options, retriedAfterRefresh: true });
+        } catch {
+          // Refresh itself failed (e.g. backend unreachable) — fall through to the normal
+          // error path below instead of masking a real outage as a token problem.
+        }
+      } else if (typeof window !== "undefined") {
+        // A real account's session actually expired. Never silently re-establish a different
+        // (anonymous demo) identity in its place — clear the dead token and let the app shell's
+        // existing "not authenticated" state take over, same as any other session loss.
+        clearToken();
+        window.dispatchEvent(new Event("aipcc:session-expired"));
+      }
+    }
+
     if (res.status === 403) {
       message = "This view is read-only. Get full account access to make changes.";
     }
