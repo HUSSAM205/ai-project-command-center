@@ -41,25 +41,30 @@ interface PortfolioPmoResult {
  * fetch is what powers the scope-creep what-if simulator and realization-rate table below.
  *
  * Individual project rows already degrade field-by-field on a per-call failure (the .catch()s
- * below). The only way this whole page used to fail outright was api.projects() itself throwing
- * — after GET auto-retry (lib/api.ts) is exhausted, or the load hanging past
- * offlinePreview.OVERALL_TIMEOUT_MS. In that case, fall back to a static, clearly-labeled
- * fictional portfolio (lib/offlinePreview.ts) instead of a bare error box — this page is
- * public-facing, so "always renders something real-looking, honestly labeled" beats "sometimes
- * shows a red crash". The `offline` flag drives the banner in the page body below. */
+ * below) — but pmoApi's request() (lib/api-pmo.ts) has no fetch-level timeout, so a single
+ * genuinely-stalled call (not a rejection, just a fetch that never settles) used to hang the
+ * whole Promise.all forever with nothing left to throw and nothing for the old outer try/catch
+ * to catch — an infinite spinner distinct from an outright failure. The entire per-project fan-out
+ * is now wrapped in the same withTimeout used everywhere else in this file (offlinePreview.ts's
+ * OVERALL_TIMEOUT_MS, 9s) so a stall converts to a timeout rejection like any other failure and
+ * falls through to the fictional-portfolio fallback below — bounded wait, never indefinite. */
 async function loadPortfolioPmo(): Promise<PortfolioPmoResult> {
   try {
-    const projects = await withTimeout(api.projects());
-    const rows = await Promise.all(
-      projects.map(async (project) => {
-        const [evm, gates, raci, ledger] = await Promise.all([
-          pmoApi.evm(project.id).catch(() => null),
-          pmoApi.stageGates(project.id).catch(() => [] as StageGate[]),
-          pmoApi.raci(project.id).catch(() => [] as RaciEntry[]),
-          pmoApi.contractLedger(project.id).catch(() => null),
-        ]);
-        return { project, evm, gates, raci, ledger };
-      }),
+    const rows = await withTimeout(
+      (async () => {
+        const projects = await api.projects();
+        return Promise.all(
+          projects.map(async (project) => {
+            const [evm, gates, raci, ledger] = await Promise.all([
+              pmoApi.evm(project.id).catch(() => null),
+              pmoApi.stageGates(project.id).catch(() => [] as StageGate[]),
+              pmoApi.raci(project.id).catch(() => [] as RaciEntry[]),
+              pmoApi.contractLedger(project.id).catch(() => null),
+            ]);
+            return { project, evm, gates, raci, ledger };
+          }),
+        );
+      })(),
     );
     return { rows, offline: false };
   } catch {
@@ -224,7 +229,7 @@ export default function PmoWorkspacePage() {
             {t("pagePmoWorkspaceTitle")}
           </h1>
           <p className="mt-1 text-sm text-text-tertiary">
-            Portfolio-wide rollup of the real EVM, stage-gate, and RACI data already tracked per project.
+            Enterprise rollup of the real EVM, stage-gate, and RACI data already tracked per project.
           </p>
         </div>
         {offline && <OfflinePreviewBanner onRetry={portfolio.reload} subject="portfolio data" inline className="mt-1" />}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Upload, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
@@ -68,7 +68,7 @@ export default function DocumentsPage() {
   const [simulated, setSimulated] = useState<SimulatedDocument[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const documents = documentsApi.data ?? [];
+  const documents = useMemo(() => documentsApi.data ?? [], [documentsApi.data]);
   const hasInProgress = documents.some((d) => IN_PROGRESS_STATUSES.has(d.status));
 
   // Poll while any document is still PENDING/PROCESSING so the list picks up READY/FAILED
@@ -111,47 +111,97 @@ export default function DocumentsPage() {
     [push, documentsApi, isDemo],
   );
 
-  const columns: Column<Document>[] = [
+  // Unified row type so a locally-parsed preview (never uploaded) and a real, saved document can
+  // share one table instead of two disjointed lists/empty-states. `preview` rows carry an
+  // estimated chunk count from the browser-only parse in simulateLocalUpload(); real rows never
+  // fabricate one (the list endpoint doesn't return it) — a dash is honest, a made-up number isn't.
+  type DocumentRow = { kind: "real"; document: Document } | { kind: "preview"; preview: SimulatedDocument };
+
+  const documentRows: DocumentRow[] = useMemo(() => {
+    const real: DocumentRow[] = documents.map((document) => ({ kind: "real", document }));
+    const preview: DocumentRow[] = simulated.map((preview) => ({ kind: "preview", preview }));
+    return [...preview, ...real].sort((a, b) => {
+      const aTime = a.kind === "real" ? a.document.created_at : a.preview.created_at;
+      const bTime = b.kind === "real" ? b.document.created_at : b.preview.created_at;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  }, [documents, simulated]);
+
+  const columns: Column<DocumentRow>[] = [
     {
       key: "filename",
       header: "Document",
-      sortValue: (d) => d.filename,
-      render: (d) => (
+      sortValue: (r) => (r.kind === "real" ? r.document.filename : r.preview.filename),
+      render: (r) => (
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden="true" />
-          <span className="font-medium text-text-primary">{d.filename}</span>
+          <span className="font-medium text-text-primary">{r.kind === "real" ? r.document.filename : r.preview.filename}</span>
         </div>
       ),
     },
-    { key: "type", header: "Type", sortValue: (d) => d.file_type, render: (d) => d.file_type.toUpperCase() },
-    { key: "size", header: "Size", align: "right", sortValue: (d) => d.file_size_bytes, render: (d) => formatBytes(d.file_size_bytes) },
+    {
+      key: "type",
+      header: "Type",
+      sortValue: (r) => (r.kind === "real" ? r.document.file_type : r.preview.file_type),
+      render: (r) => (r.kind === "real" ? r.document.file_type : r.preview.file_type).toUpperCase(),
+    },
+    {
+      key: "size",
+      header: "Size",
+      align: "right",
+      sortValue: (r) => (r.kind === "real" ? r.document.file_size_bytes : r.preview.file_size_bytes),
+      render: (r) => formatBytes(r.kind === "real" ? r.document.file_size_bytes : r.preview.file_size_bytes),
+    },
+    {
+      key: "chunks",
+      header: "Chunks",
+      align: "right",
+      sortValue: (r) => (r.kind === "preview" ? r.preview.chunk_count : -1),
+      render: (r) =>
+        r.kind === "preview" ? (
+          <span className="font-tabular text-text-secondary">~{r.preview.chunk_count} est.</span>
+        ) : (
+          <span className="text-text-tertiary">—</span>
+        ),
+    },
     {
       key: "status",
       header: "Status",
-      sortValue: (d) => d.status,
-      render: (d) =>
-        isStalled(d) ? (
+      sortValue: (r) => (r.kind === "real" ? r.document.status : "PREVIEW"),
+      render: (r) =>
+        r.kind === "preview" ? (
+          <Badge tone="info">Local Preview</Badge>
+        ) : isStalled(r.document) ? (
           <Badge tone="warning">Stalled</Badge>
         ) : (
-          <Badge tone={documentStatusTone(d.status)}>{titleCase(d.status)}</Badge>
+          <Badge tone={documentStatusTone(r.document.status)}>{titleCase(r.document.status)}</Badge>
         ),
     },
-    { key: "uploaded", header: "Uploaded", align: "right", sortValue: (d) => d.created_at, render: (d) => <span className="font-tabular">{formatDate(d.created_at)}</span> },
+    {
+      key: "uploaded",
+      header: "Uploaded",
+      align: "right",
+      sortValue: (r) => (r.kind === "real" ? r.document.created_at : r.preview.created_at),
+      render: (r) => (
+        <span className="font-tabular">{formatDate(r.kind === "real" ? r.document.created_at : r.preview.created_at)}</span>
+      ),
+    },
   ];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-text-primary">{t("pageDocumentsTitle")}</h1>
-        <p className="mt-1 text-sm text-text-tertiary">{documents.length} document{documents.length === 1 ? "" : "s"} — AI-extracted requirements, deliverables, and Q&amp;A</p>
+        <p className="mt-1 text-sm text-text-tertiary">{documentRows.length} document{documentRows.length === 1 ? "" : "s"} — AI-extracted requirements, deliverables, and Q&amp;A</p>
       </div>
 
       {isDemo && (
         <div className="flex items-center gap-2 rounded-md border border-info-border bg-info-bg px-3.5 py-2.5 text-sm text-info-fg">
           <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
-            Sandbox mode: dropping a file below parses it and estimates its chunk count right in your browser — no upload,
-            nothing saved. Get full account access to run a real document through the extraction pipeline.
+            Local-only preview: a file dropped below is parsed and chunk-estimated entirely in your browser — it never
+            leaves this device and nothing is stored. Get full account access to run a real document through the
+            extraction pipeline.
           </span>
         </div>
       )}
@@ -176,7 +226,7 @@ export default function DocumentsPage() {
             <Upload className="mb-2 h-6 w-6 text-text-tertiary" aria-hidden="true" />
             <p className="text-sm font-medium text-text-primary">Drag and drop a document here</p>
             <p className="mt-1 text-xs text-text-tertiary">
-              {isDemo ? "PDF, DOCX, or TXT — local preview only" : "PDF, DOCX, or TXT — up to 20MB"}
+              {isDemo ? "PDF, DOCX, or TXT — secure in-browser ingestion" : "PDF, DOCX, or TXT — up to 20MB"}
             </p>
             <input
               ref={fileInputRef}
@@ -193,33 +243,9 @@ export default function DocumentsPage() {
         </CardContent>
       </Card>
 
-      {simulated.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-text-primary">
-            <Sparkles className="h-4 w-4 text-info-fg" aria-hidden="true" />
-            Local preview (not saved)
-          </h2>
-          <div className="divide-y divide-border-default rounded-md border border-border-default">
-            {simulated.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden="true" />
-                  <span className="truncate font-medium text-text-primary">{d.filename}</span>
-                </div>
-                <div className="flex shrink-0 items-center gap-3 text-xs text-text-tertiary">
-                  <span className="font-tabular">{formatBytes(d.file_size_bytes)}</span>
-                  <span className="font-tabular">{d.chunk_count} chunk{d.chunk_count === 1 ? "" : "s"} (estimated)</span>
-                  <Badge tone="info">Preview</Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {documentsApi.error ? (
         <ErrorState description={documentsApi.error.message} offline={documentsApi.error.message?.includes("offline")} onRetry={documentsApi.reload} />
-      ) : documents.length === 0 && !documentsApi.loading ? (
+      ) : documentRows.length === 0 && !documentsApi.loading ? (
         <EmptyState
           icon={<FileText className="h-6 w-6" />}
           title="No documents yet"
@@ -228,11 +254,17 @@ export default function DocumentsPage() {
       ) : (
         <DataTable
           columns={columns}
-          rows={documents}
+          rows={documentRows}
           loading={documentsApi.loading}
-          getRowKey={(d) => d.id}
+          getRowKey={(r) => (r.kind === "real" ? r.document.id : r.preview.id)}
           emptyTitle="No documents yet"
-          onRowClick={(d) => router.push(`/app/documents/${d.id}`)}
+          onRowClick={(r) => {
+            if (r.kind === "preview") {
+              push("Local previews don't have a detail page — this one was never saved.", "info");
+              return;
+            }
+            router.push(`/app/documents/${r.document.id}`);
+          }}
         />
       )}
     </div>

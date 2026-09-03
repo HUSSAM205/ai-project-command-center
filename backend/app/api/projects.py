@@ -183,7 +183,8 @@ def get_project_ai_insights(
     mutation — subject to the tighter anonymous AI rate limit."""
     project = _get_project_or_404(db, principal.organization_id, project_id)
     ai_router.enforce_rate_limit(
-        scope_key=f"{principal.organization_id}:{principal.user_id}", read_only=principal.read_only
+        scope_key=f"{principal.organization_id}:{principal.session_id or principal.user_id}",
+        read_only=principal.read_only,
     )
     context = build_project_context(db, principal.organization_id, project)
     response = ai_router.dispatch(

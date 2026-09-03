@@ -48,7 +48,11 @@ CIRCUIT_COOLDOWN_SECONDS = 60.0
 # Long enough that a cached live-provider answer is actually useful within a session, short
 # enough that a stale answer doesn't linger for days once the underlying data has changed.
 CACHE_TTL_SECONDS = 30 * 60
-ANONYMOUS_RATE_LIMIT_PER_HOUR = 5
+# Raised from 5 after fixing the scope-key bug that had every anonymous visitor sharing one
+# global bucket (see CurrentPrincipal.session_id) -- now that this budget is genuinely per-visitor,
+# 5/hour was needlessly tight for someone clicking through the executive brief, AI assistant, and a
+# couple of document Q&A calls in one sitting.
+ANONYMOUS_RATE_LIMIT_PER_HOUR = 15
 AUTHENTICATED_RATE_LIMIT_PER_HOUR = 20
 
 

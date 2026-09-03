@@ -25,6 +25,7 @@ def create_access_token(
     role: str,
     read_only: bool = False,
     expires_minutes: int | None = None,
+    session_id: str | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     expires_delta = timedelta(minutes=expires_minutes or settings.JWT_EXPIRES_MINUTES)
@@ -36,6 +37,13 @@ def create_access_token(
         "iat": now,
         "exp": now + expires_delta,
     }
+    if session_id is not None:
+        # Anonymous/demo tokens all carry the same "demo" sentinel `sub` (see above) — that's
+        # relied on elsewhere (audit.py, consulting.py) as "not a real user row, don't try to
+        # use this as a FK". `sid` is a separate, per-token random id used only to give each
+        # anonymous visitor their own AI rate-limit bucket (app/ai/router.py's scope_key) instead
+        # of every anonymous visitor on the internet sharing one global bucket keyed off "demo".
+        payload["sid"] = session_id
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 

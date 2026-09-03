@@ -28,7 +28,9 @@ TOP_K_CHUNKS = 5
 
 
 def _scope_key(principal: CurrentPrincipal) -> str:
-    return f"{principal.organization_id}:{principal.user_id}"
+    # session_id (unique per anonymous token) takes priority over user_id (the same shared
+    # "demo" sentinel for every anonymous visitor) -- see CurrentPrincipal's docstring.
+    return f"{principal.organization_id}:{principal.session_id or principal.user_id}"
 
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)

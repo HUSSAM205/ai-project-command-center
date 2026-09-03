@@ -55,7 +55,9 @@ router = APIRouter(prefix="/api/v1", tags=["pmo"])
 
 
 def _scope_key(principal: CurrentPrincipal) -> str:
-    return f"{principal.organization_id}:{principal.user_id}"
+    # session_id (unique per anonymous token) takes priority over user_id (the same shared
+    # "demo" sentinel for every anonymous visitor) -- see CurrentPrincipal's docstring.
+    return f"{principal.organization_id}:{principal.session_id or principal.user_id}"
 
 
 def _get_project_or_404(db: Session, principal: CurrentPrincipal, project_id: UUID):

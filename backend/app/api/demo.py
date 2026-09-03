@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -34,6 +34,12 @@ def create_demo_session(db: Session = Depends(get_db)) -> DemoSessionResponse:
         role="VIEWER",
         read_only=True,
         expires_minutes=120,
+        # Every anonymous visitor otherwise shares the same "demo" sub claim (see
+        # create_access_token's docstring) -- without a per-token id here, the AI rate limiter
+        # (app/ai/router.py) would scope its 5-requests/hour budget to that one shared string,
+        # meaning the entire public internet split one global budget instead of getting 5/hour
+        # each. This is the fix for that, not a threshold bump.
+        session_id=str(uuid4()),
     )
     return DemoSessionResponse(
         access_token=token,

@@ -115,7 +115,7 @@ export default function ProductWorkspacePage() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Portfolio Projects</CardTitle>
+            <CardTitle>Active Initiatives &amp; Projects</CardTitle>
             <CardDescription>Click a project to open its real dependencies, risks, and audit trail</CardDescription>
           </div>
         </CardHeader>

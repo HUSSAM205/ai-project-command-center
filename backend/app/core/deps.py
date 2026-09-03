@@ -27,6 +27,11 @@ class CurrentPrincipal:
     organization_id: UUID
     role: str
     read_only: bool
+    # Per-token random id, present only on anonymous/demo tokens (see create_access_token) --
+    # use this instead of user_id for anything that needs to distinguish one anonymous visitor
+    # from another (rate-limit scope keys), since user_id is the same "demo" sentinel for all of
+    # them. None for real authenticated users, who are already uniquely identified by user_id.
+    session_id: str | None = None
 
 
 def _principal_from_token(token: str) -> CurrentPrincipal:
@@ -47,6 +52,7 @@ def _principal_from_token(token: str) -> CurrentPrincipal:
         organization_id=organization_id,
         role=payload.get("role", "VIEWER"),
         read_only=bool(payload.get("read_only", False)),
+        session_id=payload.get("sid"),
     )
 
 

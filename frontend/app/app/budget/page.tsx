@@ -108,7 +108,7 @@ export default function BudgetPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-text-primary">{t("pageBudgetTitle")}</h1>
-          <p className="mt-1 text-sm text-text-tertiary">Baseline cost forecasts use an EVM formula (EAC = BAC / CPI) — never presented as ML.</p>
+          <p className="mt-1 text-sm text-text-tertiary">Standard CAPM/EVM Forecast Formulation (EAC = BAC / CPI).</p>
         </div>
         {offline && <OfflinePreviewBanner onRetry={data.reload} subject="budget data" inline className="mt-1" />}
       </div>
@@ -121,7 +121,7 @@ export default function BudgetPage() {
           value={formatCompactCurrency(totals.totalForecast)}
           delta={totals.variance > 0 ? `+${formatCompactCurrency(totals.variance)} over` : formatCompactCurrency(totals.variance) + " under"}
           deltaTone={totals.variance > 0 ? "critical" : "success"}
-          hint="Baseline estimate, portfolio-wide"
+          hint="Baseline estimate, enterprise-wide"
         />
         <MetricCard label="Burn Rate" value={formatPercent(totals.burnRate)} hint="Actual spend vs. total budget" />
       </div>
@@ -187,7 +187,7 @@ export default function BudgetPage() {
       <ProgressBar
         value={totals.burnRate}
         showValue
-        label="Portfolio burn rate"
+        label="Capital burn rate"
         tone={totals.burnRate > 100 ? "critical" : totals.burnRate > 85 ? "warning" : "success"}
       />
 
