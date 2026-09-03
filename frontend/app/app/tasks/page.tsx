@@ -12,9 +12,10 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { ErrorState } from "@/components/ui/ErrorState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Kanban } from "@/components/viz/Kanban";
 import { formatDate, titleCase } from "@/lib/utils";
+import { buildOfflineTasks, withOfflineFallback } from "@/lib/offlinePreview";
 
 const STATUS_OPTIONS: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "REVIEW", "DONE"];
 const PRIORITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -23,14 +24,15 @@ const EMPTY_TASKS: Task[] = [];
 export default function TasksPage() {
   const { isDemo } = useAuth();
   const { push } = useToast();
-  const tasksApi = useApi(() => api.allTasks(), []);
+  const tasksApi = useApi(() => withOfflineFallback(() => api.allTasks(), buildOfflineTasks), []);
   const [view, setView] = useState<"table" | "kanban">("table");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [localTasks, setLocalTasks] = useState<Task[] | null>(null);
 
-  const tasks = localTasks ?? tasksApi.data ?? EMPTY_TASKS;
+  const offline = tasksApi.data?.offline ?? false;
+  const tasks = localTasks ?? tasksApi.data?.data ?? EMPTY_TASKS;
 
   const filtered = useMemo(() => {
     return tasks.filter((t) => {
@@ -118,12 +120,12 @@ export default function TasksPage() {
         />
       </div>
 
-      {tasksApi.error ? (
-        <ErrorState description={tasksApi.error.message} offline={tasksApi.error.message?.includes("offline")} onRetry={tasksApi.reload} />
-      ) : view === "table" ? (
+      {offline && <OfflinePreviewBanner onRetry={tasksApi.reload} subject="tasks" />}
+
+      {view === "table" ? (
         <DataTable columns={columns} rows={filtered} loading={tasksApi.loading} getRowKey={(t) => t.id} emptyTitle="No tasks match your filters" />
       ) : (
-        <Kanban tasks={filtered} onStatusChange={handleStatusChange} readOnly={isDemo} />
+        <Kanban tasks={filtered} onStatusChange={handleStatusChange} readOnly={isDemo || offline} />
       )}
     </div>
   );

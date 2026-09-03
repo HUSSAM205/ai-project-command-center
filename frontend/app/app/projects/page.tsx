@@ -11,10 +11,11 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { ErrorState } from "@/components/ui/ErrorState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { formatCompactCurrency, formatDate, titleCase } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
 
 const STATUS_OPTIONS = ["PLANNING", "ACTIVE", "ON_HOLD", "AT_RISK", "COMPLETED", "CANCELLED"];
 const PRIORITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -25,18 +26,22 @@ const HEALTH_OPTIONS = [
   { label: "Critical (<40)", value: "critical" },
 ];
 
+const EMPTY_PROJECTS: Project[] = [];
+
 export default function ProjectsPage() {
   const router = useRouter();
   const { isDemo } = useAuth();
-  const projects = useApi(() => api.projects(), []);
+  const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [health, setHealth] = useState("");
 
+  const rows = projects.data?.data ?? EMPTY_PROJECTS;
+  const offline = projects.data?.offline ?? false;
+
   const filtered = useMemo(() => {
-    if (!projects.data) return [];
-    return projects.data.filter((p) => {
+    return rows.filter((p) => {
       if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !(p.client ?? "").toLowerCase().includes(query.toLowerCase())) return false;
       if (status && p.status !== status) return false;
       if (priority && p.priority !== priority) return false;
@@ -49,7 +54,7 @@ export default function ProjectsPage() {
       }
       return true;
     });
-  }, [projects.data, query, status, priority, health]);
+  }, [rows, query, status, priority, health]);
 
   const columns: Column<Project>[] = [
     {
@@ -96,7 +101,7 @@ export default function ProjectsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-text-primary">Projects</h1>
-          <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {projects.data?.length ?? 0} projects</p>
+          <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {rows.length} projects</p>
         </div>
         {!isDemo && (
           <Button size="sm" disabled title="Project creation ships with the full write API">
@@ -127,18 +132,16 @@ export default function ProjectsPage() {
         <Select className="w-44" value={health} onChange={(e) => setHealth(e.target.value)} options={HEALTH_OPTIONS} placeholder="All health levels" />
       </div>
 
-      {projects.error ? (
-        <ErrorState description={projects.error.message} offline={projects.error.message?.includes("offline")} onRetry={projects.reload} />
-      ) : (
-        <DataTable
-          columns={columns}
-          rows={filtered}
-          loading={projects.loading}
-          getRowKey={(p) => p.id}
-          onRowClick={(p) => router.push(`/app/projects/${p.id}`)}
-          emptyTitle="No projects match your filters"
-        />
-      )}
+      {offline && <OfflinePreviewBanner onRetry={projects.reload} subject="portfolio data" />}
+
+      <DataTable
+        columns={columns}
+        rows={filtered}
+        loading={projects.loading}
+        getRowKey={(p) => p.id}
+        onRowClick={offline ? undefined : (p) => router.push(`/app/projects/${p.id}`)}
+        emptyTitle="No projects match your filters"
+      />
     </div>
   );
 }

@@ -130,7 +130,11 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
         navItems={NAV_ITEMS}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
-        footer={<BrandFooter className="border-t border-border-default" />}
+        footer={
+          <div className="border-t border-border-default">
+            <BrandFooter />
+          </div>
+        }
         header={
           <Link href="/app/dashboard" className="flex items-center gap-2 border-b border-border-default px-4 py-3.5">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-700 text-xs font-bold text-white">
@@ -152,7 +156,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
             <div className="flex items-center gap-3">
               <CommandBarTrigger />
               <span className="hidden truncate text-sm text-text-tertiary lg:inline">
-                Vertex Technologies — Live Portfolio
+                AI Project Management System — Live Portfolio
               </span>
             </div>
           }

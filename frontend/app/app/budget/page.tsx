@@ -9,30 +9,37 @@ import type { CostForecast, Project } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { DataTable, type Column } from "@/components/ui/DataTable";
-import { ErrorState } from "@/components/ui/ErrorState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { formatCompactCurrency, formatCurrency, formatPercent } from "@/lib/utils";
+import { buildOfflineForecast, buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
 
 type ProjectForecast = Project & { forecast: CostForecast | null };
 const EMPTY_PROJECTS: ProjectForecast[] = [];
 
-export default function BudgetPage() {
-  const data = useApi(async () => {
-    const projects = await api.projects();
-    const withForecasts = await Promise.all(
-      projects.map(async (p) => {
-        try {
-          const forecast = await api.projectForecast(p.id);
-          return { ...p, forecast };
-        } catch {
-          return { ...p, forecast: null };
-        }
-      }),
-    );
-    return withForecasts;
-  }, []);
+async function loadProjectsWithForecasts(): Promise<ProjectForecast[]> {
+  const projects = await api.projects();
+  return Promise.all(
+    projects.map(async (p) => {
+      try {
+        const forecast = await api.projectForecast(p.id);
+        return { ...p, forecast };
+      } catch {
+        return { ...p, forecast: null };
+      }
+    }),
+  );
+}
 
-  const projects = data.data ?? EMPTY_PROJECTS;
+function buildOfflineProjectsWithForecasts(): ProjectForecast[] {
+  return buildOfflineProjects().map((p) => ({ ...p, forecast: buildOfflineForecast(p.id) }));
+}
+
+export default function BudgetPage() {
+  const data = useApi(() => withOfflineFallback(loadProjectsWithForecasts, buildOfflineProjectsWithForecasts), []);
+
+  const offline = data.data?.offline ?? false;
+  const projects = data.data?.data ?? EMPTY_PROJECTS;
 
   const totals = useMemo(() => {
     const totalBudget = projects.reduce((s, p) => s + p.budget, 0);
@@ -94,16 +101,14 @@ export default function BudgetPage() {
     },
   ];
 
-  if (data.error) {
-    return <ErrorState description={data.error.message} offline={data.error.message?.includes("offline")} onRetry={data.reload} />;
-  }
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-text-primary">Budget &amp; Financials</h1>
         <p className="mt-1 text-sm text-text-tertiary">Baseline cost forecasts use an EVM formula (EAC = BAC / CPI) — never presented as ML.</p>
       </div>
+
+      {offline && <OfflinePreviewBanner onRetry={data.reload} subject="budget data" />}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Total Budget" value={formatCompactCurrency(totals.totalBudget)} />

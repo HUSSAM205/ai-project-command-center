@@ -279,3 +279,26 @@ body {
     display: none;
   }
 }
+
+/* Slow, gentle "breathing" — distinct from .pulse-ring's expanding-ring loop above: a smooth
+   opacity+scale sine-like cycle for a small, always-visible mark (the ES Easy Solutions badge's
+   hex core) that should read as calm ambient presence, not an active/live status indicator. */
+@keyframes brand-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+.brand-breathe {
+  animation: brand-breathe 3.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-breathe {
+    animation: none;
+  }
+}

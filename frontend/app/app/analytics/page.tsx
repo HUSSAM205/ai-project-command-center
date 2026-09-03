@@ -24,9 +24,11 @@ import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { CardSkeleton } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Badge, riskLevelTone, SOLID_COLORS } from "@/components/ui/Badge";
 import { formatCompactCurrency, formatDate, formatDateShort, formatPercent } from "@/lib/utils";
+import { buildOfflineAnalytics, withOfflineFallback } from "@/lib/offlinePreview";
 
 const SEVERITY_COLORS: Record<string, string> = {
   LOW: SOLID_COLORS[riskLevelTone("LOW")],
@@ -44,12 +46,14 @@ const tooltipStyle = {
 };
 
 export default function AnalyticsPage() {
-  const analytics = useApi(() => api.analytics(), []);
+  const analytics = useApi(() => withOfflineFallback(() => api.analytics(), buildOfflineAnalytics), []);
+  const offline = analytics.data?.offline ?? false;
+  const summary = analytics.data?.data ?? null;
 
   const severityEntries = useMemo(() => {
-    if (!analytics.data) return [];
-    return Object.entries(analytics.data.risk_snapshot.severity_counts).filter(([, v]) => v > 0);
-  }, [analytics.data]);
+    if (!summary) return [];
+    return Object.entries(summary.risk_snapshot.severity_counts).filter(([, v]) => v > 0);
+  }, [summary]);
 
   if (analytics.loading) {
     return (
@@ -63,18 +67,11 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (analytics.error || !analytics.data) {
-    return (
-      <ErrorState
-        title="Couldn't load analytics"
-        description={analytics.error?.message}
-        offline={analytics.error?.message?.includes("offline")}
-        onRetry={analytics.reload}
-      />
-    );
+  if (!summary) {
+    return <ErrorState title="Couldn't load analytics" onRetry={analytics.reload} />;
   }
 
-  const d = analytics.data;
+  const d = summary;
   const burnRatePct = d.total_budget > 0 ? (d.total_actual_cost / d.total_budget) * 100 : 0;
   const latestCompletion = d.task_completion_trend.at(-1);
 
@@ -84,10 +81,14 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-xl font-semibold text-text-primary">Portfolio Analytics</h1>
           <p className="mt-1 text-sm text-text-tertiary">
-            Trends derived from real project data — {d.organization_name}, generated {formatDate(d.generated_at)}.
+            {offline
+              ? `Offline preview trends, generated ${formatDate(d.generated_at)}.`
+              : `Trends derived from real project data — ${d.organization_name}, generated ${formatDate(d.generated_at)}.`}
           </p>
         </div>
       </div>
+
+      {offline && <OfflinePreviewBanner onRetry={analytics.reload} subject="analytics" />}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <MetricCard label="Total Projects" value={<AnimatedNumber value={d.total_projects} />} icon={<FolderKanban className="h-4 w-4" />} />

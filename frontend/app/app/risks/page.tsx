@@ -10,11 +10,12 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
-import { ErrorState } from "@/components/ui/ErrorState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Spinner } from "@/components/ui/LoadingState";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
 import { RiskRadar } from "@/components/viz/RiskRadar";
 import { titleCase } from "@/lib/utils";
+import { buildOfflineRisks, withOfflineFallback } from "@/lib/offlinePreview";
 
 const CATEGORY_OPTIONS = ["SCHEDULE", "BUDGET", "RESOURCE", "TECHNICAL", "SECURITY", "OPERATIONAL", "DEPENDENCY", "EXTERNAL"];
 const SEVERITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -22,13 +23,14 @@ const STATUS_OPTIONS = ["OPEN", "MITIGATING", "CLOSED"];
 const EMPTY_RISKS: (Risk & { project_name?: string })[] = [];
 
 export default function RisksPage() {
-  const risksApi = useApi(() => api.allRisks(), []);
+  const risksApi = useApi(() => withOfflineFallback(() => api.allRisks(), buildOfflineRisks), []);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [severity, setSeverity] = useState("");
   const [status, setStatus] = useState("");
 
-  const risks = risksApi.data ?? EMPTY_RISKS;
+  const offline = risksApi.data?.offline ?? false;
+  const risks = risksApi.data?.data ?? EMPTY_RISKS;
 
   const filtered = useMemo(() => {
     return risks.filter((r) => {
@@ -57,10 +59,9 @@ export default function RisksPage() {
         <p className="mt-1 text-sm text-text-tertiary">{filtered.length} of {risks.length} risks across the portfolio</p>
       </div>
 
-      {risksApi.error ? (
-        <ErrorState description={risksApi.error.message} offline={risksApi.error.message?.includes("offline")} onRetry={risksApi.reload} />
-      ) : (
-        <>
+      {offline && <OfflinePreviewBanner onRetry={risksApi.reload} subject="risk data" />}
+
+      <>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Card className="xl:col-span-2">
               <CardHeader>
@@ -94,8 +95,7 @@ export default function RisksPage() {
           </div>
 
           <DataTable columns={columns} rows={filtered} loading={risksApi.loading} getRowKey={(r) => r.id} emptyTitle="No risks match your filters" />
-        </>
-      )}
+      </>
     </div>
   );
 }

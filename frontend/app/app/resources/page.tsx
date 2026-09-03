@@ -10,10 +10,12 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { Resource, Task } from "@/lib/types";
+import { buildOfflineResources, buildOfflineTasks, withOfflineFallback } from "@/lib/offlinePreview";
 
 const EMPTY_RESOURCES: Resource[] = [];
 const EMPTY_TASKS: Task[] = [];
@@ -39,16 +41,17 @@ function utilizationRatioPct(r: Resource): number {
 }
 
 export default function ResourcesPage() {
-  const resourcesApi = useApi(() => api.resources(), []);
-  const tasksApi = useApi(() => api.allTasks(), []);
+  const resourcesApi = useApi(() => withOfflineFallback(() => api.resources(), buildOfflineResources), []);
+  const tasksApi = useApi(() => withOfflineFallback(() => api.allTasks(), buildOfflineTasks), []);
 
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [candidates, setCandidates] = useState<AssigneeCandidate[] | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
 
-  const resources = resourcesApi.data ?? EMPTY_RESOURCES;
-  const tasks = tasksApi.data ?? EMPTY_TASKS;
+  const offline = resourcesApi.data?.offline ?? false;
+  const resources = resourcesApi.data?.data ?? EMPTY_RESOURCES;
+  const tasks = tasksApi.data?.data ?? EMPTY_TASKS;
 
   const columns: Column<Resource>[] = [
     {
@@ -130,6 +133,8 @@ export default function ResourcesPage() {
         <p className="mt-1 text-sm text-text-tertiary">Capacity, allocation, and utilization across the bench</p>
       </div>
 
+      {offline && <OfflinePreviewBanner onRetry={() => { resourcesApi.reload(); tasksApi.reload(); }} subject="resource data" />}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Overloaded</p>
@@ -145,9 +150,9 @@ export default function ResourcesPage() {
         </Card>
       </div>
 
-      <UtilizationHeatmap resources={resources} loading={resourcesApi.loading} error={resourcesApi.error} onRetry={resourcesApi.reload} />
+      <UtilizationHeatmap resources={resources} loading={resourcesApi.loading} error={resourcesApi.error} offline={offline} onRetry={resourcesApi.reload} />
 
-      <RebalanceCard resources={resources} tasks={tasks} overAllocated={overAllocated} onChanged={() => { resourcesApi.reload(); tasksApi.reload(); }} />
+      <RebalanceCard resources={resources} tasks={tasks} overAllocated={overAllocated} offline={offline} onChanged={() => { resourcesApi.reload(); tasksApi.reload(); }} />
 
       <Card>
         <CardHeader>
@@ -169,11 +174,12 @@ export default function ResourcesPage() {
               placeholder={tasksApi.loading ? "Loading tasks…" : "Select a task"}
               disabled={tasksApi.loading}
             />
-            <Button onClick={runSuggest} loading={suggestLoading} disabled={!selectedTaskId}>
+            <Button onClick={runSuggest} loading={suggestLoading} disabled={!selectedTaskId || offline}>
               Find best fit
             </Button>
           </div>
 
+          {offline && <p className="mt-3 text-xs text-text-tertiary">Unavailable while showing offline preview data.</p>}
           {suggestError && <p className="mt-3 text-sm text-critical-fg">{suggestError}</p>}
 
           {candidates && (
@@ -203,11 +209,7 @@ export default function ResourcesPage() {
         </CardContent>
       </Card>
 
-      {resourcesApi.error ? (
-        <ErrorState description={resourcesApi.error.message} offline={resourcesApi.error.message?.includes("offline")} onRetry={resourcesApi.reload} />
-      ) : (
-        <DataTable columns={columns} rows={resources} loading={resourcesApi.loading} getRowKey={(r) => r.id} emptyTitle="No resources yet" />
-      )}
+      <DataTable columns={columns} rows={resources} loading={resourcesApi.loading} getRowKey={(r) => r.id} emptyTitle="No resources yet" />
     </div>
   );
 }
@@ -224,11 +226,13 @@ function UtilizationHeatmap({
   resources,
   loading,
   error,
+  offline,
   onRetry,
 }: {
   resources: Resource[];
   loading: boolean;
   error: Error | null;
+  offline: boolean;
   onRetry: () => void;
 }) {
   return (
@@ -237,9 +241,15 @@ function UtilizationHeatmap({
         <div>
           <CardTitle>Utilization Heatmap</CardTitle>
           <CardDescription>
-            Every resource, colored by real utilization state. Cells flagged in red with a warning icon are over{" "}
-            {OVER_ALLOCATION_THRESHOLD_PCT}% allocated (workload ÷ capacity), computed live from real data — never a
-            fixed list.
+            {offline ? (
+              <>Offline preview data — cells flagged in red are over {OVER_ALLOCATION_THRESHOLD_PCT}% allocated.</>
+            ) : (
+              <>
+                Every resource, colored by real utilization state. Cells flagged in red with a warning icon are over{" "}
+                {OVER_ALLOCATION_THRESHOLD_PCT}% allocated (workload ÷ capacity), computed live from real data — never
+                a fixed list.
+              </>
+            )}
           </CardDescription>
         </div>
       </CardHeader>
@@ -304,11 +314,13 @@ function RebalanceCard({
   resources,
   tasks,
   overAllocated,
+  offline,
   onChanged,
 }: {
   resources: Resource[];
   tasks: Task[];
   overAllocated: Resource[];
+  offline: boolean;
   onChanged: () => void;
 }) {
   const [resourceId, setResourceId] = useState("");
@@ -420,10 +432,11 @@ function RebalanceCard({
                 placeholder={!selectedResource ? "Pick a resource first" : assignedTasks.length === 0 ? "No assigned tasks" : "Select a task"}
                 disabled={!selectedResource || assignedTasks.length === 0}
               />
-              <Button onClick={suggestRebalance} loading={loading} disabled={!taskId}>
+              <Button onClick={suggestRebalance} loading={loading} disabled={!taskId || offline}>
                 Suggest Rebalance
               </Button>
             </div>
+            {offline && <p className="text-xs text-text-tertiary">Unavailable while showing offline preview data.</p>}
 
             {selectedResource && assignedTasks.length === 0 && (
               <p className="text-xs text-text-tertiary">{selectedResource.name} has no currently assigned tasks in this org.</p>
