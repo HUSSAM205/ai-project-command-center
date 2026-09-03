@@ -197,7 +197,9 @@ export default function PmoWorkspacePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">PMO Workspace</h1>
+        <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
+          PMO Workspace
+        </h1>
         <p className="mt-1 text-sm text-text-tertiary">
           Portfolio-wide rollup of the real EVM, stage-gate, and RACI data already tracked per project.
         </p>

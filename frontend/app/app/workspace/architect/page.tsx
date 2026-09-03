@@ -36,7 +36,9 @@ export default function ArchitectWorkspacePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">AI Solution Architect</h1>
+        <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
+          AI Solution Architect
+        </h1>
         <p className="mt-1 text-sm text-text-tertiary">
           How this app&apos;s document intelligence and AI router actually work, plus the real telemetry behind them.
         </p>

@@ -23,7 +23,11 @@ export function MetricCard({
     deltaTone === "success" ? "text-success-fg" : deltaTone === "critical" ? "text-critical-fg" : "text-text-tertiary";
 
   return (
-    <Card className={cn("p-5", className)}>
+    // Glass treatment scoped to this component specifically, not the base Card: a KPI tile is one
+    // large high-contrast number + a short label — low enough information density that a
+    // translucent surface doesn't blur anything the way it would over a dense data table (see
+    // Card.tsx's own reasoning for staying opaque there).
+    <Card className={cn("border-border-default/80 bg-surface/75 p-5 backdrop-blur-md", className)}>
       <div className="flex items-start justify-between">
         <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{label}</p>
         {icon && <span className="text-text-tertiary">{icon}</span>}

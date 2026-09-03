@@ -491,3 +491,27 @@ export function buildOfflineAnalytics() {
     },
   };
 }
+
+/** Matches DashboardSummary (lib/types.ts). Figures are consistent with buildOfflineProjects /
+ * buildOfflineRisks above (same 3 projects, same risk mix) rather than independently invented,
+ * so a visitor who checks more than one offline page sees numbers that add up. */
+export function buildOfflineDashboard() {
+  return {
+    total_projects: 3,
+    active_projects: 1,
+    completed_projects: 0,
+    at_risk_projects: 1,
+    avg_health_score: Math.round((78 + 61 + 88) / 3),
+    budget_utilization_pct: Math.round((4_340_000 / 8_300_000) * 1000) / 10,
+    resource_utilization_pct: 68.4,
+    upcoming_deadlines: [
+      { id: "offline-t3", name: "ERP licensing renegotiation", due_date: now, type: "TASK" as const },
+      { id: "offline-t1", name: "Network cutover rehearsal", due_date: now, type: "TASK" as const },
+      { id: "offline-m1", name: "G3 sign-off — Cloud Migration Initiative", due_date: now, type: "MILESTONE" as const },
+    ],
+    total_budget: 8_300_000,
+    total_actual_cost: 4_340_000,
+    risk_counts: { LOW: 1, MEDIUM: 2, HIGH: 1, CRITICAL: 1 },
+    projects_by_status: { PLANNING: 1, ACTIVE: 1, ON_HOLD: 0, AT_RISK: 1, COMPLETED: 0, CANCELLED: 0 },
+  };
+}

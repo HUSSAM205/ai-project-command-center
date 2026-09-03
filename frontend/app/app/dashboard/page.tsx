@@ -19,12 +19,13 @@ import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Calendar, Sparkl
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useDashboardStream } from "@/lib/useDashboardStream";
-import type { ProjectStatus, Resource } from "@/lib/types";
+import type { Project, ProjectStatus, Resource, Risk } from "@/lib/types";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MotionCard } from "@/components/ui/MotionCard";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
 import { CardSkeleton } from "@/components/ui/LoadingState";
+import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
@@ -34,12 +35,23 @@ import { RiskRadar } from "@/components/viz/RiskRadar";
 import { buildLocalExecutiveBrief } from "@/lib/localExecutiveBrief";
 import { formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
 import { cardHover, crossFade, staggerContainer, staggerItem } from "@/lib/motion";
+import {
+  buildOfflineDashboard,
+  buildOfflineProjects,
+  buildOfflineRisks,
+  buildOfflineResources,
+  withOfflineFallback,
+} from "@/lib/offlinePreview";
 
 /** How long the real GET /api/v1/ai/executive-brief call gets before the honestly-labeled local
  * fallback (lib/localExecutiveBrief.ts) takes over the display. If the real response lands after
  * this, the swap already happened — arriving data still replaces the fallback via the crossfade
  * below, it just means the fallback was visible first. */
 const EXECUTIVE_BRIEF_FALLBACK_DELAY_MS = 1000;
+
+const EMPTY_PROJECTS: Project[] = [];
+const EMPTY_RESOURCES: Resource[] = [];
+const EMPTY_RISKS: (Risk & { project_name?: string })[] = [];
 
 const SEVERITY_COLORS: Record<string, string> = {
   LOW: SOLID_COLORS[riskLevelTone("LOW")],
@@ -59,15 +71,23 @@ const STATUS_COLORS: Record<ProjectStatus, string> = {
 
 export default function DashboardPage() {
   const dashboard = useDashboardStream();
-  const projects = useApi(() => api.projects(), []);
-  const resources = useApi(() => api.resources(), []);
+  const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
+  const resources = useApi(() => withOfflineFallback(() => api.resources(), buildOfflineResources), []);
   const brief = useApi(() => api.executiveBrief(), []);
-  const allRisks = useApi(() => api.allRisks(), []);
+  const allRisks = useApi(() => withOfflineFallback(() => api.allRisks(), buildOfflineRisks), []);
+
+  const projectsList = projects.data?.data ?? EMPTY_PROJECTS;
+  const resourcesList = resources.data?.data ?? EMPTY_RESOURCES;
+  const allRisksList = allRisks.data?.data ?? EMPTY_RISKS;
+  // A missing SSE/dashboard summary (dashboard.error) is the strongest signal the backend is
+  // genuinely unreachable, not just one of these three secondary calls having a bad moment — so
+  // that's what drives the single offline banner below, rather than each call's own flag.
+  const dashboardOffline = !!dashboard.error && !dashboard.data;
+  const d = dashboard.data ?? (dashboardOffline ? buildOfflineDashboard() : null);
 
   const worstHealthProjects = useMemo(() => {
-    if (!projects.data) return [];
-    return [...projects.data].sort((a, b) => a.health_score - b.health_score).slice(0, 6);
-  }, [projects.data]);
+    return [...projectsList].sort((a, b) => a.health_score - b.health_score).slice(0, 6);
+  }, [projectsList]);
 
   // Executive Brief resilient fallback (Task 1): the real GET /api/v1/ai/executive-brief call is
   // the only AI-touching request on this page, and the only one that can be slow (rate-limit +
@@ -88,25 +108,21 @@ export default function DashboardPage() {
 
   // Grounded purely in data this page already fetched for other cards (GET /dashboard,
   // GET /projects) — see lib/localExecutiveBrief.ts. Recomputed only when that real data changes.
-  const localBrief = useMemo(
-    () => (dashboard.data ? buildLocalExecutiveBrief(dashboard.data, projects.data ?? []) : null),
-    [dashboard.data, projects.data],
-  );
+  const localBrief = useMemo(() => (d ? buildLocalExecutiveBrief(d, projectsList) : null), [d, projectsList]);
 
   // Show the fallback once it's due AND slow, OR immediately on an outright failure — either way,
   // never a red error box for this card (the "zero visible failure state" goal from the brief).
   const showBriefFallback = !brief.data && (briefFallbackDue || !!brief.error) && !!localBrief;
 
   const financialData = useMemo(() => {
-    if (!projects.data) return [];
-    return projects.data.map((p) => ({ name: shortName(p.name), Budget: p.budget, Actual: p.actual_cost }));
-  }, [projects.data]);
+    return projectsList.map((p) => ({ name: shortName(p.name), Budget: p.budget, Actual: p.actual_cost }));
+  }, [projectsList]);
 
   const resourceCapacity = useMemo(() => {
     const buckets: Record<string, Resource[]> = { UNDERUTILIZED: [], OPTIMAL: [], OVERLOADED: [] };
-    (resources.data ?? []).forEach((r) => buckets[r.utilization_state]?.push(r));
+    resourcesList.forEach((r) => buckets[r.utilization_state]?.push(r));
     return buckets;
-  }, [resources.data]);
+  }, [resourcesList]);
 
   if (dashboard.loading) {
     return (
@@ -120,7 +136,11 @@ export default function DashboardPage() {
     );
   }
 
-  if (dashboard.error || !dashboard.data) {
+  if (!d) {
+    // useDashboardStream's own error only ever fires when it has *never* loaded anything at all
+    // (see that hook's doc comment) — and buildOfflineDashboard() covers that case above, so
+    // reaching here at all would mean something unexpected slipped through both. Kept as a real,
+    // honest fallback rather than assumed unreachable.
     return (
       <ErrorState
         title="Couldn't load the dashboard"
@@ -131,12 +151,11 @@ export default function DashboardPage() {
     );
   }
 
-  const d = dashboard.data;
   const riskEntries = Object.entries(d.risk_counts ?? {}).filter(([, v]) => v > 0);
   const statusEntries = Object.entries(d.projects_by_status ?? {}).filter(([, v]) => v > 0) as [ProjectStatus, number][];
 
   return (
-    <div className="space-y-8">
+    <div className="ambient-glow space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
@@ -146,6 +165,8 @@ export default function DashboardPage() {
         </div>
         <LiveIndicator status={dashboard.status} className="mt-1" />
       </div>
+
+      {dashboardOffline && <OfflinePreviewBanner onRetry={dashboard.reload} subject="portfolio data" />}
 
       {/* KPI row */}
       <motion.div
@@ -326,7 +347,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <RiskRadar risks={allRisks.data ?? []} />
+            <RiskRadar risks={allRisksList} />
           </CardContent>
         </MotionCard>
       </div>
@@ -383,7 +404,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {(resources.data ?? []).length === 0 ? (
+            {resourcesList.length === 0 ? (
               <EmptyState title="No resources yet" />
             ) : (
               <ul className="space-y-3">

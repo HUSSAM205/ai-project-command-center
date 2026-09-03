@@ -314,3 +314,22 @@ body {
   background-size: 28px 28px;
   background-position: -14px -14px;
 }
+
+/* Ambient spotlight behind a hero/KPI region — a soft radial wash of the app's own brand token
+   (never a raw hardcoded hex), faint enough to read as depth rather than draw the eye away from
+   the numbers sitting on top of it. `color-mix` derives the low-opacity tint from --brand-500
+   itself, so it moves if the brand token ever does. Absolutely positioned behind its relatively-
+   positioned parent — apply `.ambient-glow` to a `relative` wrapper around the content it should
+   glow behind. */
+.ambient-glow {
+  position: relative;
+}
+.ambient-glow::before {
+  content: "";
+  position: absolute;
+  inset: -40px -20px auto -20px;
+  height: 220px;
+  background: radial-gradient(ellipse 60% 100% at 50% 0%, color-mix(in srgb, var(--brand-500) 16%, transparent), transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}

@@ -69,7 +69,9 @@ export default function ProductWorkspacePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">Executive Suite</h1>
+        <h1 className="bg-gradient-to-r from-text-primary to-text-tertiary bg-clip-text text-xl font-semibold text-transparent">
+          Executive Suite
+        </h1>
         <p className="mt-1 text-sm text-text-tertiary">
           Product-prioritization and steering-committee tools, curated from real consulting and PMO data.
         </p>
