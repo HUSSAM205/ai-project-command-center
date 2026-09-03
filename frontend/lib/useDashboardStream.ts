@@ -7,6 +7,13 @@ import type { DashboardSummary } from "./types";
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline";
 
 const POLL_INTERVAL_MS = 4000;
+// A single dropped SSE ping (or one slow poll tick) can flip the raw status to "reconnecting" for
+// a moment before it self-corrects on the very next event/tick -- that's real, but showing it to a
+// visitor for under a second reads as flicker rather than signal. Hold the *displayed* status a
+// beat before reflecting a reconnecting/offline transition; a genuine sustained issue (e.g. the
+// free-tier backend's actual cold start) still shows honestly once it clears this bar. Immediate
+// on the way back to "live" -- recovery should never be hidden or delayed.
+const RECONNECT_DISPLAY_DELAY_MS = 3000;
 
 /**
  * Live-updating dashboard summary.
@@ -27,12 +34,25 @@ export function useDashboardStream() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [status, setStatus] = useState<StreamStatus>("connecting");
+  // Only ever written from the timer below, never synchronously from the effect body -- when
+  // `status` itself is "live"/"connecting" the render-time ternary below reads `status` directly
+  // and this stale value is simply not consulted, so it needs no matching "clear" write either.
+  const [delayedBadStatus, setDelayedBadStatus] = useState<StreamStatus>("connecting");
   const [retryKey, setRetryKey] = useState(0);
 
   const dataRef = useRef<DashboardSummary | null>(null);
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  // See RECONNECT_DISPLAY_DELAY_MS above: debounces only the "things got worse" transitions.
+  useEffect(() => {
+    if (status === "live" || status === "connecting") return;
+    const timer = setTimeout(() => setDelayedBadStatus(status), RECONNECT_DISPLAY_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
+
+  const displayStatus = status === "live" || status === "connecting" ? status : delayedBadStatus;
 
   const reload = useCallback(() => {
     setLoading((prev) => (dataRef.current ? prev : true));
@@ -142,5 +162,5 @@ export function useDashboardStream() {
     };
   }, [retryKey]);
 
-  return { data, loading, error, status, reload };
+  return { data, loading, error, status: displayStatus, reload };
 }
