@@ -38,15 +38,19 @@ export default function TasksPage() {
   const offline = tasksApi.data?.offline ?? false;
   const tasks = localTasks ?? tasksApi.data?.data ?? EMPTY_TASKS;
 
-  function handleCreated(task: Task) {
+  function handleCreated(task: Task, simulated: boolean) {
     setLocalTasks([task, ...tasks]);
-    push("Task created", "success");
+    push(simulated ? "Task created — sandbox only, not saved" : "Task created", "success");
   }
 
   async function handleDelete(task: Task) {
     if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return;
     const prev = tasks;
     setLocalTasks(tasks.filter((t) => t.id !== task.id));
+    if (isDemo) {
+      push("Deleted — sandbox only, not saved", "success");
+      return;
+    }
     try {
       await api.deleteTask(task.id);
       push("Task deleted", "success");
@@ -68,6 +72,10 @@ export default function TasksPage() {
   async function handleStatusChange(taskId: string, newStatus: TaskStatus) {
     const prev = tasks;
     setLocalTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
+    if (isDemo) {
+      push("Status updated — sandbox only, not saved", "success");
+      return;
+    }
     try {
       await api.updateTask(taskId, { status: newStatus });
       push("Task status updated", "success");
@@ -171,7 +179,7 @@ export default function TasksPage() {
       {view === "table" ? (
         <DataTable columns={columns} rows={filtered} loading={tasksApi.loading} getRowKey={(t) => t.id} emptyTitle="No tasks match your filters" />
       ) : (
-        <Kanban tasks={filtered} onStatusChange={handleStatusChange} readOnly={isDemo || offline} />
+        <Kanban tasks={filtered} onStatusChange={handleStatusChange} readOnly={offline} />
       )}
     </div>
   );

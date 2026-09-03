@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { makePreviewId, simulateLatency } from "@/lib/demoSandbox";
 import type { Priority, Project, ProjectStatus } from "@/lib/types";
 import { titleCase } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
@@ -18,6 +20,12 @@ const PRIORITY_OPTIONS: Priority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
  * unused by any page — the Projects page button was a disabled stub). No manager picker: the
  * backend's manager_id references the org's user accounts, and the only endpoint that lists
  * those is admin-gated — adding a real one is a separate, larger change than this form.
+ *
+ * In a demo (anonymous, read-only) session, submitting never calls that real endpoint (it would
+ * just 403) — it resolves locally with a `preview-` id instead, so the sandbox stays fully
+ * interactive without writing to the shared seeded portfolio. `onCreated`'s second argument tells
+ * the caller which happened, for honest toast copy.
+ *
  * Remount on open via `key` (see TaskFormModal.tsx for why) rather than an effect-based reset.
  */
 export function ProjectFormModal({
@@ -27,8 +35,9 @@ export function ProjectFormModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (project: Project) => void;
+  onCreated: (project: Project, simulated: boolean) => void;
 }) {
+  const { isDemo } = useAuth();
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("PLANNING");
@@ -52,7 +61,7 @@ export function ProjectFormModal({
     setSubmitting(true);
     setError(null);
     try {
-      const project = await api.createProject({
+      const payload = {
         name: name.trim(),
         client: client.trim() || null,
         status,
@@ -60,8 +69,35 @@ export function ProjectFormModal({
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         budget: budget ? Number(budget) : 0,
-      });
-      onCreated(project);
+      };
+      if (isDemo) {
+        await simulateLatency();
+        const now = new Date().toISOString();
+        const project: Project = {
+          id: makePreviewId(),
+          organization_id: "",
+          name: payload.name,
+          description: null,
+          client: payload.client,
+          manager_id: null,
+          manager_name: null,
+          status: payload.status,
+          priority: payload.priority,
+          start_date: payload.start_date ?? now.slice(0, 10),
+          end_date: payload.end_date ?? now.slice(0, 10),
+          budget: payload.budget,
+          actual_cost: 0,
+          progress: 0,
+          health_score: 100,
+          risk_level: "LOW",
+          created_at: now,
+          updated_at: now,
+        };
+        onCreated(project, true);
+      } else {
+        const project = await api.createProject(payload);
+        onCreated(project, false);
+      }
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create the project. Please try again.");

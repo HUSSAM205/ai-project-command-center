@@ -16,8 +16,8 @@ import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { ProjectFormModal } from "@/components/forms/ProjectFormModal";
 import { useToast } from "@/components/ui/Toast";
 import { formatCompactCurrency, formatDate, titleCase } from "@/lib/utils";
-import { useAuth } from "@/lib/auth";
 import { buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
+import { isPreviewId } from "@/lib/demoSandbox";
 
 const STATUS_OPTIONS = ["PLANNING", "ACTIVE", "ON_HOLD", "AT_RISK", "COMPLETED", "CANCELLED"];
 const PRIORITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -32,7 +32,6 @@ const EMPTY_PROJECTS: Project[] = [];
 
 export default function ProjectsPage() {
   const router = useRouter();
-  const { isDemo } = useAuth();
   const { push } = useToast();
   const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
   const [query, setQuery] = useState("");
@@ -45,9 +44,9 @@ export default function ProjectsPage() {
   const rows = localProjects ?? projects.data?.data ?? EMPTY_PROJECTS;
   const offline = projects.data?.offline ?? false;
 
-  function handleCreated(project: Project) {
+  function handleCreated(project: Project, simulated: boolean) {
     setLocalProjects([project, ...rows]);
-    push("Project created", "success");
+    push(simulated ? "Project created — sandbox only, not saved" : "Project created", "success");
   }
 
   const filtered = useMemo(() => {
@@ -115,11 +114,9 @@ export default function ProjectsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {offline && <OfflinePreviewBanner onRetry={projects.reload} subject="portfolio data" inline />}
-          {!isDemo && (
-            <Button size="sm" disabled={offline} title={offline ? "Reconnect to create a project" : undefined} onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" /> New Project
-            </Button>
-          )}
+          <Button size="sm" disabled={offline} title={offline ? "Reconnect to create a project" : undefined} onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4" /> New Project
+          </Button>
         </div>
       </div>
 
@@ -152,7 +149,14 @@ export default function ProjectsPage() {
         rows={filtered}
         loading={projects.loading}
         getRowKey={(p) => p.id}
-        onRowClick={offline ? undefined : (p) => router.push(`/app/projects/${p.id}`)}
+        onRowClick={
+          offline
+            ? undefined
+            : (p) =>
+                isPreviewId(p.id)
+                  ? push("Sandbox-only projects don't have a detail page — this one was never saved.", "info")
+                  : router.push(`/app/projects/${p.id}`)
+        }
         emptyTitle="No projects match your filters"
       />
     </div>

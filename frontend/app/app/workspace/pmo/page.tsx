@@ -126,6 +126,25 @@ export default function PmoWorkspacePage() {
         </Link>
       ),
     },
+    {
+      key: "status",
+      header: "Status",
+      render: (r) => {
+        if (!r.evm) return "—";
+        const cv = r.evm.ev - r.evm.ac;
+        const sv = r.evm.ev - r.evm.pv;
+        return (
+          <div className="flex flex-wrap gap-1">
+            <Badge tone={cv < 0 ? "critical" : "success"} dot>
+              {cv < 0 ? "Over budget" : "On budget"}
+            </Badge>
+            <Badge tone={sv < 0 ? "critical" : "success"} dot>
+              {sv < 0 ? "Delayed" : "Ahead"}
+            </Badge>
+          </div>
+        );
+      },
+    },
     { key: "cpi", header: "CPI", align: "right", sortValue: (r) => r.evm?.cpi ?? -1, render: (r) => (r.evm?.cpi != null ? r.evm.cpi.toFixed(2) : "—") },
     { key: "spi", header: "SPI", align: "right", sortValue: (r) => r.evm?.spi ?? -1, render: (r) => (r.evm?.spi != null ? r.evm.spi.toFixed(2) : "—") },
     {

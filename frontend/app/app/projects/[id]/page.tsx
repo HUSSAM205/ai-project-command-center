@@ -18,6 +18,7 @@ import { Dices, Plus, SquarePen, Sparkles, Trash2, TrendingDown, TrendingUp } fr
 import { api, ApiError } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/ui/Toast";
 import { PMO_COMMAND_EVENT, type PmoCommandDetail } from "@/lib/commands";
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
@@ -120,6 +121,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }, [allocations.data, resources.data]);
 
   const { push } = useToast();
+  const { isDemo } = useAuth();
 
   // Local overrides layered on top of tasks.reload()/risks.reload() so create/edit/delete update
   // the on-screen table and RiskMatrix instantly (no DataTable skeleton flash). Health/forecast
@@ -136,11 +138,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const riskRows = localRisks ?? risks.data ?? [];
 
   const handleTaskCreated = useCallback(
-    (task: Task) => {
+    (task: Task, simulated: boolean) => {
       setLocalTasks([task, ...(localTasks ?? tasks.data ?? [])]);
-      push("Task created", "success");
-      health.reload();
-      forecast.reload();
+      push(simulated ? "Task created — sandbox only, not saved" : "Task created", "success");
+      if (!simulated) {
+        health.reload();
+        forecast.reload();
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload()/push are stable; localTasks/tasks.data read fresh via closure on each open
     [tasks.data, localTasks],
@@ -151,6 +155,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       if (!window.confirm(`Delete "${task.title}"? This can't be undone.`)) return;
       const prev = taskRows;
       setLocalTasks(prev.filter((t) => t.id !== task.id));
+      if (isDemo) {
+        push("Deleted — sandbox only, not saved", "success");
+        return;
+      }
       try {
         await api.deleteTask(task.id);
         push("Task deleted", "success");
@@ -162,16 +170,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [taskRows],
+    [taskRows, isDemo],
   );
 
   const handleRiskSaved = useCallback(
-    (risk: Risk) => {
+    (risk: Risk, simulated: boolean) => {
       const rows = localRisks ?? risks.data ?? [];
       const exists = rows.some((r) => r.id === risk.id);
       setLocalRisks(exists ? rows.map((r) => (r.id === risk.id ? risk : r)) : [risk, ...rows]);
-      push(exists ? "Risk updated" : "Risk added", "success");
-      health.reload();
+      const verb = exists ? "updated" : "added";
+      push(simulated ? `Risk ${verb} — sandbox only, not saved` : `Risk ${verb}`, "success");
+      if (!simulated) health.reload();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [risks.data, localRisks],
@@ -182,6 +191,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       if (!window.confirm(`Delete "${risk.title}"? This can't be undone.`)) return;
       const prev = riskRows;
       setLocalRisks(prev.filter((r) => r.id !== risk.id));
+      if (isDemo) {
+        push("Deleted — sandbox only, not saved", "success");
+        return;
+      }
       try {
         await api.deleteRisk(risk.id);
         push("Risk deleted", "success");
@@ -192,7 +205,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [riskRows],
+    [riskRows, isDemo],
   );
 
   const taskColumns = useMemo<Column<Task>[]>(
@@ -837,15 +850,25 @@ function EVMCard({
   data: EVM | null;
   onRetry: () => void;
 }) {
-  const stats: { label: string; value: number | null; format: (n: number) => string; hint?: string }[] = data
+  // SV (Schedule Variance = EV - PV) and CV (Cost Variance = EV - AC) aren't in the backend's EVM
+  // response — they're the two remaining standard EVM variances not already covered by CPI/SPI/VAC,
+  // and both are trivial, exact derivations from fields the response already carries (never a new
+  // computation invented client-side).
+  const sv = data ? data.ev - data.pv : null;
+  const cv = data ? data.ev - data.ac : null;
+
+  const stats: { label: string; value: number | null; format: (n: number) => string; hint?: string; tone?: "critical" | "success" }[] = data
     ? [
+        { label: "BAC", value: data.bac, format: (n) => formatCurrency(n), hint: "Budget At Completion" },
         { label: "PV", value: data.pv, format: (n) => formatCurrency(n), hint: "Planned Value" },
         { label: "EV", value: data.ev, format: (n) => formatCurrency(n), hint: "Earned Value" },
         { label: "AC", value: data.ac, format: (n) => formatCurrency(n), hint: "Actual Cost" },
+        { label: "CV", value: cv, format: (n) => formatCurrency(n), hint: "Cost Variance (EV − AC)", tone: cv !== null && cv < 0 ? "critical" : "success" },
+        { label: "SV", value: sv, format: (n) => formatCurrency(n), hint: "Schedule Variance (EV − PV)", tone: sv !== null && sv < 0 ? "critical" : "success" },
         { label: "CPI", value: data.cpi, format: (n) => n.toFixed(2), hint: "Cost Performance Index" },
         { label: "SPI", value: data.spi, format: (n) => n.toFixed(2), hint: "Schedule Performance Index" },
         { label: "EAC", value: data.eac, format: (n) => formatCurrency(n), hint: "Estimate At Completion" },
-        { label: "VAC", value: data.vac, format: (n) => formatCurrency(n), hint: "Variance At Completion" },
+        { label: "VAC", value: data.vac, format: (n) => formatCurrency(n), hint: "Variance At Completion", tone: data.vac < 0 ? "critical" : "success" },
       ]
     : [];
 
@@ -854,8 +877,18 @@ function EVMCard({
       <CardHeader>
         <div>
           <CardTitle>Earned Value Management</CardTitle>
-          <CardDescription>{data ? data.method : "Deterministic EVM baseline — PV / EV / AC / CPI / SPI / EAC / VAC"}</CardDescription>
+          <CardDescription>{data ? data.method : "Deterministic EVM baseline — BAC / PV / EV / AC / CV / SV / CPI / SPI / EAC / VAC"}</CardDescription>
         </div>
+        {data && (
+          <div className="flex flex-wrap gap-1.5">
+            <Badge tone={cv !== null && cv < 0 ? "critical" : "success"} dot>
+              {cv !== null && cv < 0 ? "Over budget" : "On budget"}
+            </Badge>
+            <Badge tone={sv !== null && sv < 0 ? "critical" : "success"} dot>
+              {sv !== null && sv < 0 ? "Delayed" : "Ahead of schedule"}
+            </Badge>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -866,16 +899,11 @@ function EVMCard({
           <EmptyState title="EVM data unavailable" />
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">
               {stats.map((s) => (
                 <div key={s.label}>
                   <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{s.label}</p>
-                  <p
-                    className={cn(
-                      "mt-1 text-lg font-semibold",
-                      s.label === "VAC" ? (data.vac < 0 ? "text-critical-fg" : "text-success-fg") : "text-text-primary",
-                    )}
-                  >
+                  <p className={cn("mt-1 text-lg font-semibold", s.tone === "critical" ? "text-critical-fg" : s.tone === "success" ? "text-success-fg" : "text-text-primary")}>
                     {s.value !== null ? <AnimatedNumber value={s.value} format={s.format} /> : "—"}
                   </p>
                   {s.hint && <p className="mt-0.5 text-[11px] text-text-tertiary">{s.hint}</p>}

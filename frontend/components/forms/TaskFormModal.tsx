@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { makePreviewId, simulateLatency } from "@/lib/demoSandbox";
 import type { Priority, Project, Resource, Task, TaskStatus } from "@/lib/types";
 import { titleCase } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
@@ -17,6 +19,11 @@ const PRIORITY_OPTIONS: Priority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
  * Create-task form. `projectId` fixed (project detail page) hides the project picker; omitting it
  * (global Tasks page) shows one fed by `projects`. Posts to the real POST /projects/{id}/tasks
  * endpoint (already existed in lib/api.ts, unused by any page until now) — no client-side fake state.
+ *
+ * In a demo (anonymous, read-only) session, submitting never calls that real endpoint — it would
+ * just 403. Instead it builds a locally-scoped task with a `preview-` id (lib/demoSandbox.ts) so
+ * the sandbox stays fully interactive without ever writing to the shared seeded portfolio.
+ * `onCreated`'s second argument tells the caller which happened, for honest toast copy.
  *
  * Callers must remount this on open (e.g. `key={open ? "open" : "closed"}`) rather than relying on
  * an effect to reset fields — form state below is deliberately initialized once, from props, at
@@ -35,8 +42,9 @@ export function TaskFormModal({
   projectId?: string;
   projects?: Project[];
   resources?: Resource[];
-  onCreated: (task: Task) => void;
+  onCreated: (task: Task, simulated: boolean) => void;
 }) {
+  const { isDemo } = useAuth();
   const [selectedProjectId, setSelectedProjectId] = useState(projectId ?? "");
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<TaskStatus>("TODO");
@@ -62,15 +70,41 @@ export function TaskFormModal({
     setSubmitting(true);
     setError(null);
     try {
-      const task = await api.createTask(effectiveProjectId, {
+      const assignee = (resources ?? []).find((r) => r.id === assigneeId);
+      const payload = {
         title: title.trim(),
         status,
         priority,
         assignee_id: assigneeId || null,
         due_date: dueDate || null,
         estimated_hours: estimatedHours ? Number(estimatedHours) : null,
-      });
-      onCreated(task);
+      };
+      if (isDemo) {
+        await simulateLatency();
+        const now = new Date().toISOString();
+        const task: Task = {
+          id: makePreviewId(),
+          project_id: effectiveProjectId,
+          title: payload.title,
+          description: null,
+          assignee_id: payload.assignee_id,
+          assignee_name: assignee?.name ?? null,
+          status: payload.status,
+          priority: payload.priority,
+          estimated_hours: payload.estimated_hours,
+          actual_hours: null,
+          start_date: null,
+          due_date: payload.due_date,
+          completion_percentage: status === "DONE" ? 100 : 0,
+          required_skills: null,
+          created_at: now,
+          updated_at: now,
+        };
+        onCreated(task, true);
+      } else {
+        const task = await api.createTask(effectiveProjectId, payload);
+        onCreated(task, false);
+      }
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create the task. Please try again.");

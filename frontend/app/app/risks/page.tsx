@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Plus, Search, SquarePen, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
 import type { Risk } from "@/lib/types";
 import { Badge, riskLevelTone } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
@@ -26,6 +27,7 @@ const STATUS_OPTIONS = ["OPEN", "MITIGATING", "CLOSED"];
 const EMPTY_RISKS: (Risk & { project_name?: string })[] = [];
 
 export default function RisksPage() {
+  const { isDemo } = useAuth();
   const risksApi = useApi(() => withOfflineFallback(() => api.allRisks(), buildOfflineRisks), []);
   const projectsApi = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
   const { push } = useToast();
@@ -44,17 +46,22 @@ export default function RisksPage() {
     return projectsApi.data?.data?.find((p) => p.id === projectId)?.name;
   }
 
-  function handleSaved(risk: Risk) {
+  function handleSaved(risk: Risk, simulated: boolean) {
     const withProjectName = { ...risk, project_name: projectNameFor(risk.project_id) };
     const exists = risks.some((r) => r.id === risk.id);
     setLocalRisks(exists ? risks.map((r) => (r.id === risk.id ? withProjectName : r)) : [withProjectName, ...risks]);
-    push(exists ? "Risk updated" : "Risk added", "success");
+    const verb = exists ? "updated" : "added";
+    push(simulated ? `Risk ${verb} — sandbox only, not saved` : `Risk ${verb}`, "success");
   }
 
   async function handleDelete(risk: Risk) {
     if (!window.confirm(`Delete "${risk.title}"? This can't be undone.`)) return;
     const prev = risks;
     setLocalRisks(risks.filter((r) => r.id !== risk.id));
+    if (isDemo) {
+      push("Deleted — sandbox only, not saved", "success");
+      return;
+    }
     try {
       await api.deleteRisk(risk.id);
       push("Risk deleted", "success");

@@ -199,9 +199,9 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
         projectId={document.project_id ?? undefined}
         projects={projectsApi.data ?? undefined}
         prefillTitle={riskDraftTitle ?? undefined}
-        onSaved={() => {
+        onSaved={(_risk, simulated) => {
           if (riskDraftTitle) setAddedRisks((prev) => new Set(prev).add(riskDraftTitle));
-          push("Risk added to the register", "success");
+          push(simulated ? "Risk added — sandbox only, not saved" : "Risk added to the register", "success");
           setRiskDraftTitle(null);
         }}
       />

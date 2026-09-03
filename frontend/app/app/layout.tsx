@@ -16,6 +16,7 @@ import {
   Sparkles,
   Briefcase,
   LogOut,
+  RotateCcw,
   ShieldCheck,
   Cpu,
   ClipboardCheck,
@@ -196,6 +197,15 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
                           label: "Full account access",
                           icon: <ShieldCheck className="h-4 w-4" />,
                           onSelect: () => router.push("/login"),
+                        },
+                        // Every create/edit/delete in a read-only sandbox session applies to local
+                        // state only, never to the shared seeded portfolio (see lib/demoSandbox.ts)
+                        // — so "reset" is just discarding that local state and re-fetching the real
+                        // baseline. A reload does exactly that.
+                        {
+                          label: "Reset demo data",
+                          icon: <RotateCcw className="h-4 w-4" />,
+                          onSelect: () => window.location.reload(),
                         },
                       ]
                     : []),

@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { Project, Risk, RiskCategory, RiskStatus } from "@/lib/types";
+import { useAuth } from "@/lib/auth";
+import { makePreviewId, simulateLatency } from "@/lib/demoSandbox";
+import type { Project, Risk, RiskCategory, RiskLevel, RiskStatus } from "@/lib/types";
 import { titleCase } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -13,11 +15,26 @@ const CATEGORY_OPTIONS: RiskCategory[] = ["SCHEDULE", "BUDGET", "RESOURCE", "TEC
 const STATUS_OPTIONS: RiskStatus[] = ["OPEN", "MITIGATING", "CLOSED"];
 const SCALE_OPTIONS = [1, 2, 3, 4, 5].map((n) => ({ label: String(n), value: String(n) }));
 
+// Mirrors backend/app/api/serializers.py's derive_risk_severity — score = probability x impact,
+// never persisted server-side, always derived. Duplicated here only for the demo-sandbox path
+// below, where there is no server response to read it back from.
+function deriveSeverity(score: number): RiskLevel {
+  if (score <= 4) return "LOW";
+  if (score <= 9) return "MEDIUM";
+  if (score <= 16) return "HIGH";
+  return "CRITICAL";
+}
+
 /**
  * Create/edit risk form — same modal for both. Passing `risk` switches it to edit mode (PATCH
  * /risks/{id}); omitting it creates one (POST /projects/{id}/risks). `severity` and `score` are
  * never inputs here — the backend derives them from probability x impact, same as everywhere
  * else in the app that reads a Risk.
+ *
+ * In a demo (anonymous, read-only) session, submitting never calls the real write endpoint (it
+ * would just 403) — it resolves locally instead, so the sandbox stays fully interactive without
+ * writing to the shared seeded register. `onSaved`'s second argument tells the caller which
+ * happened, for honest toast copy.
  *
  * Callers must remount this on open/target-change (e.g. `key={\`${open}-${risk?.id ?? "new"}\`}`)
  * rather than relying on an effect to reset fields — state below is initialized once, from props,
@@ -40,8 +57,9 @@ export function RiskFormModal({
   // Pre-fills the title in CREATE mode (e.g. from a document's AI-extracted risk text) without
   // switching the form into edit mode the way passing `risk` does.
   prefillTitle?: string;
-  onSaved: (risk: Risk) => void;
+  onSaved: (risk: Risk, simulated: boolean) => void;
 }) {
+  const { isDemo } = useAuth();
   const isEdit = !!risk;
   const [selectedProjectId, setSelectedProjectId] = useState(projectId ?? risk?.project_id ?? "");
   const [title, setTitle] = useState(risk?.title ?? prefillTitle ?? "");
@@ -78,8 +96,28 @@ export function RiskFormModal({
         mitigation: mitigation.trim() || null,
         status,
       };
-      const saved = isEdit ? await api.updateRisk(risk!.id, payload) : await api.createRisk(effectiveProjectId, payload);
-      onSaved(saved);
+      if (isDemo) {
+        await simulateLatency();
+        const score = payload.probability * payload.impact;
+        const saved: Risk = {
+          id: risk?.id ?? makePreviewId(),
+          project_id: effectiveProjectId || risk?.project_id || "",
+          title: payload.title,
+          description: risk?.description ?? null,
+          category: payload.category,
+          probability: payload.probability,
+          impact: payload.impact,
+          score,
+          severity: deriveSeverity(score),
+          owner: payload.owner,
+          mitigation: payload.mitigation,
+          status: payload.status,
+        };
+        onSaved(saved, true);
+      } else {
+        const saved = isEdit ? await api.updateRisk(risk!.id, payload) : await api.createRisk(effectiveProjectId, payload);
+        onSaved(saved, false);
+      }
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : `Could not ${isEdit ? "update" : "create"} the risk. Please try again.`);
