@@ -13,7 +13,9 @@ import { Modal } from "@/components/ui/Modal";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Spinner } from "@/components/ui/LoadingState";
+import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/lib/auth";
+import { isPreviewId, makePreviewId, simulateLatency } from "@/lib/demoSandbox";
 import { cn, formatCompactCurrency, formatDate } from "@/lib/utils";
 import { buildOfflineConsultingCases, withTimeout } from "@/lib/offlinePreview";
 
@@ -50,8 +52,10 @@ const EMPTY_FORM = {
 export default function ConsultingPage() {
   const router = useRouter();
   const { isDemo } = useAuth();
+  const { push } = useToast();
   const cases = useApi(loadBusinessCases, []);
-  const rows = cases.data?.cases ?? [];
+  const [localCases, setLocalCases] = useState<BusinessCase[] | null>(null);
+  const rows = localCases ?? cases.data?.cases ?? [];
   const offline = cases.data?.offline ?? false;
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -62,11 +66,17 @@ export default function ConsultingPage() {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // In a demo (anonymous, read-only) session this never calls the real, write-gated
+  // POST /business-cases endpoint (it would just 403). It resolves locally instead, same
+  // sandbox pattern as Task/Risk/Project creation elsewhere in the app (lib/demoSandbox.ts) --
+  // the ROI calculator and roadmap generator on the detail page are real backend calls scoped
+  // to a real case id, so a sandboxed case stays on this list rather than navigating to a detail
+  // page that can't exist server-side (same reasoning as the Projects page's preview-id guard).
   async function submit() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const created = await api.consulting.createBusinessCase({
+      const payload = {
         name: form.name,
         business_problem: form.business_problem,
         current_state: form.current_state,
@@ -76,15 +86,49 @@ export default function ConsultingPage() {
         stakeholders: form.stakeholders || null,
         budget: form.budget ? Number(form.budget) : 0,
         timeline: form.timeline || null,
-      });
-      setOpen(false);
-      setForm(EMPTY_FORM);
-      router.push(`/app/consulting/${created.id}`);
+      };
+      if (isDemo) {
+        await simulateLatency();
+        const now = new Date().toISOString();
+        const created: BusinessCase = {
+          id: makePreviewId(),
+          organization_id: "",
+          name: payload.name,
+          business_problem: payload.business_problem,
+          current_state: payload.current_state,
+          desired_state: payload.desired_state,
+          objectives: payload.objectives,
+          constraints: payload.constraints,
+          stakeholders: payload.stakeholders,
+          budget: payload.budget,
+          timeline: payload.timeline,
+          created_by: null,
+          created_at: now,
+        };
+        setLocalCases([created, ...rows]);
+        setOpen(false);
+        setForm(EMPTY_FORM);
+        push("Business case created — sandbox only, not saved", "success");
+      } else {
+        const created = await api.consulting.createBusinessCase(payload);
+        setOpen(false);
+        setForm(EMPTY_FORM);
+        router.push(`/app/consulting/${created.id}`);
+      }
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Failed to create the business case.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function openCase(c: BusinessCase) {
+    if (offline) return;
+    if (isPreviewId(c.id)) {
+      push("Sandbox-only business cases don't have a detail page — this one was never saved.", "info");
+      return;
+    }
+    router.push(`/app/consulting/${c.id}`);
   }
 
   const canSubmit =
@@ -99,9 +143,9 @@ export default function ConsultingPage() {
             Digital transformation business cases — scored opportunities, an ROI calculator, and an AI-narrated roadmap.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {offline && <OfflinePreviewBanner onRetry={cases.reload} subject="business cases" inline />}
-          {!isDemo && !offline && (
+          {!offline && (
             <Button size="sm" onClick={() => setOpen(true)}>
               <Plus className="h-4 w-4" /> New Business Case
             </Button>
@@ -119,7 +163,7 @@ export default function ConsultingPage() {
           title="No business cases yet"
           description="Start a new business case to intake a transformation opportunity, score use cases, and generate a roadmap."
           action={
-            !isDemo ? (
+            !offline ? (
               <Button size="sm" onClick={() => setOpen(true)}>
                 <Plus className="h-4 w-4" /> New Business Case
               </Button>
@@ -132,7 +176,7 @@ export default function ConsultingPage() {
             <Card
               key={c.id}
               className={cn("p-5 transition-colors", offline ? "cursor-default opacity-90" : "cursor-pointer hover:bg-subtle")}
-              onClick={() => !offline && router.push(`/app/consulting/${c.id}`)}
+              onClick={() => openCase(c)}
             >
               <p className="font-medium text-text-primary">{c.name}</p>
               <p className="mt-1.5 line-clamp-2 text-xs text-text-tertiary">{c.business_problem}</p>
