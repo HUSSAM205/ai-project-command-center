@@ -40,6 +40,13 @@ class Document(UUIDPKMixin, Base):
     # exact original text (no chunk-overlap duplication) without re-reading/re-parsing the
     # file from disk on every request.
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set only for a demo/anonymous session's own real upload (see app/api/documents.py's
+    # DEMO_UPLOAD_* constants) -- the per-token session_id from CurrentPrincipal, not a user id.
+    # Drives three things: the per-session hourly upload budget, hiding one anonymous visitor's
+    # upload from every other anonymous visitor sharing the same demo organization (real accounts
+    # still see everything), and the lazy TTL cleanup that reaps these rows. Null for every
+    # non-demo upload, which is unaffected by any of that.
+    uploaded_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

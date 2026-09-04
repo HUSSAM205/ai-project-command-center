@@ -31,3 +31,9 @@ def save_upload(organization_id: UUID, filename: str, data: bytes) -> str:
 
 def read_upload(storage_path: str) -> bytes:
     return Path(storage_path).read_bytes()
+
+
+def delete_upload(storage_path: str) -> None:
+    """Best-effort: used by the demo-upload TTL cleanup. Missing is not an error -- Render's
+    disk is ephemeral per deploy, so the file may already be gone on container restart."""
+    Path(storage_path).unlink(missing_ok=True)
