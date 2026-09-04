@@ -9,7 +9,13 @@ interface State<T> {
   loading: boolean;
 }
 
-/** Fetches `fn()` on mount and whenever a value in `deps` changes; exposes `reload` for manual refetch. */
+/** Fetches `fn()` on mount and whenever a value in `deps` changes; exposes `reload` for manual
+ * refetch. A caller polling this via `reload()` (documents/PMO/etc. watching an in-progress
+ * status) never has the UI wiped back to a loading skeleton or an empty/error state on a
+ * background refresh once real data has loaded once — same "don't hide good data behind a
+ * spinner, only ever show a blocking state before anything has loaded" rule
+ * lib/useDashboardStream.ts already applies, just generalized to every useApi caller instead of
+ * being reimplemented per page. */
 export function useApi<T>(fn: () => Promise<T>, deps: React.DependencyList = []) {
   const [state, setState] = useState<State<T>>({ data: null, error: null, loading: true });
   const [reloadKey, setReloadKey] = useState(0);
@@ -21,21 +27,28 @@ export function useApi<T>(fn: () => Promise<T>, deps: React.DependencyList = [])
     fnRef.current = fn;
   });
 
+  // Mirrors state.data one render behind, purely so the fetch effect below can check "do we
+  // already have something to show" without adding state.data itself to its dependency array
+  // (which would refetch on every successful load).
+  const dataRef = useRef<T | null>(null);
+  useEffect(() => {
+    dataRef.current = state.data;
+  }, [state.data]);
+
   // Deps are caller-supplied and can vary in length between call sites, so they can't be spread
   // into a literal hook dependency array; serialize them into one stable key instead.
   const depsKey = JSON.stringify(deps);
 
   useEffect(() => {
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicks off the loading state for this fetch
-    setState((s) => ({ ...s, loading: true, error: null }));
+    setState((s) => (dataRef.current === null ? { ...s, loading: true, error: null } : s));
     fnRef
       .current()
       .then((data) => {
         if (!cancelled) setState({ data, error: null, loading: false });
       })
       .catch((error) => {
-        if (!cancelled) setState({ data: null, error, loading: false });
+        if (!cancelled) setState({ data: dataRef.current, error, loading: false });
       });
     return () => {
       cancelled = true;

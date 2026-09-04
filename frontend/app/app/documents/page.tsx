@@ -168,7 +168,11 @@ export default function DocumentsPage() {
         </CardContent>
       </Card>
 
-      {documentsApi.error ? (
+      {documentsApi.error && documents.length === 0 ? (
+        // A background poll failure (this page reloads every 3s while any document is still
+        // processing) never blanks out an already-loaded list -- only a genuine "nothing has ever
+        // loaded" failure blocks the view. See lib/useApi.ts's matching change: it now keeps the
+        // last-known-good data on a background refresh's failure instead of nulling it out.
         <ErrorState description={documentsApi.error.message} offline={documentsApi.error.message?.includes("offline")} onRetry={documentsApi.reload} />
       ) : documents.length === 0 && !documentsApi.loading ? (
         <EmptyState

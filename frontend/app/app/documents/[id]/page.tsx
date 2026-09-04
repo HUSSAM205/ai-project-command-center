@@ -72,7 +72,10 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
     );
   }
 
-  if (detail.error || !detail.data) {
+  if (!detail.data) {
+    // Gated on data alone, not detail.error too: this page polls every 3s while processing (see
+    // above), and a single transient background-poll failure must never blank an already-loaded
+    // view -- lib/useApi.ts keeps the last-known-good data on exactly that case for this reason.
     return (
       <ErrorState
         title="Couldn't load this document"
