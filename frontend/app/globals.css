@@ -362,3 +362,49 @@ body {
     0 20px 48px -16px color-mix(in srgb, var(--brand-500) 18%, transparent),
     var(--shadow-elevation-2);
 }
+
+/* Dashboard StatChip telemetry accent — a slowly-sweeping 1px ring around a stat that genuinely
+   warrants a second look (an at-risk count above zero, a critical risk present), built the same
+   way as every other accent in this file: token-derived via color-mix, never a hardcoded neon
+   hex, gentle enough to read as "worth noting" rather than a klaxon. `--telemetry-tone` is set
+   inline per usage (see dashboard/page.tsx) to whichever semantic solid color applies. */
+@property --telemetry-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes telemetry-sweep {
+  to {
+    --telemetry-angle: 360deg;
+  }
+}
+.telemetry-accent {
+  position: relative;
+}
+.telemetry-accent::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--telemetry-angle),
+    color-mix(in srgb, var(--telemetry-tone, var(--brand-500)) 65%, transparent),
+    transparent 30%,
+    transparent 70%,
+    color-mix(in srgb, var(--telemetry-tone, var(--brand-500)) 65%, transparent)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: telemetry-sweep 4s linear infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .telemetry-accent::before {
+    animation: none;
+    background: color-mix(in srgb, var(--telemetry-tone, var(--brand-500)) 45%, transparent);
+  }
+}

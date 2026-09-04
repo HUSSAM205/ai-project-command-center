@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -17,7 +18,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Sparkles } from "lucide-react";
+import { FolderKanban, PlayCircle, CheckCircle2, AlertTriangle, Sparkles, Orbit } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useDashboardStream } from "@/lib/useDashboardStream";
@@ -32,6 +33,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
+import { PulseDot } from "@/components/ui/PulseDot";
 import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, QuickSummaryBadge, SOLID_COLORS } from "@/components/ui/Badge";
 import { RiskRadar } from "@/components/viz/RiskRadar";
 import { buildLocalExecutiveBrief } from "@/lib/localExecutiveBrief";
@@ -44,6 +46,18 @@ import {
   buildOfflineResources,
   withOfflineFallback,
 } from "@/lib/offlinePreview";
+
+// WebGL has no server-side representation, so both 3D visualizations load client-only. `loading`
+// reserves their real footprint (a fixed height matching the component's own `h-80`/`h-40`) so
+// the page never jumps once the dynamic import resolves.
+const ProjectConstellation3D = dynamic(() => import("@/components/viz/ProjectConstellation3D"), {
+  ssr: false,
+  loading: () => <div className="h-80 w-full animate-pulse rounded-lg bg-subtle" />,
+});
+const RiskHealthRings3D = dynamic(() => import("@/components/viz/RiskHealthRings3D"), {
+  ssr: false,
+  loading: () => <div className="h-40 w-full animate-pulse rounded-lg bg-subtle" />,
+});
 
 /** How long the real GET /api/v1/ai/executive-brief call gets before the honestly-labeled local
  * fallback (lib/localExecutiveBrief.ts) takes over the display. If the real response lands after
@@ -233,6 +247,32 @@ export default function DashboardPage() {
         </CardContent>
       </MotionCard>
 
+      {/* Portfolio constellation — same projects/risks data as the rest of this page, just a 3D
+          lens on it. Node height = real health_score, node size = real budget, node color = the
+          same risk_level mapping the Badge uses everywhere else. Edges connect projects sharing
+          an open risk category — the only real cross-project relationship this app's data model
+          has (task dependencies only link tasks within one project); deliberately not labeled
+          "blockers" or "dependencies" since that data doesn't exist here. */}
+      {projectsList.length > 0 && (
+        <MotionCard>
+          <CardHeader>
+            <div>
+              <CardTitle className="flex items-center gap-1.5">
+                <Orbit className="h-4 w-4 text-text-tertiary" aria-hidden="true" />
+                Portfolio Constellation
+              </CardTitle>
+              <CardDescription>
+                Height = health score, size = budget, color = risk level. Lines connect projects sharing an open risk
+                category. Hover or click a node for details.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ProjectConstellation3D projects={projectsList} risks={allRisksList} />
+          </CardContent>
+        </MotionCard>
+      )}
+
       {/* Bento grid — same four data sources the old flat KPI/card rows used (projects, risks,
           resources, budget), just regrouped by subject into asymmetric cells instead of a uniform
           stack of same-size boxes. No new fetch, no new computation. */}
@@ -263,6 +303,7 @@ export default function DashboardPage() {
                   value={<AnimatedNumber value={d.at_risk_projects} />}
                   icon={<AlertTriangle className="h-3.5 w-3.5" />}
                   tone={d.at_risk_projects > 0 ? "critical" : "neutral"}
+                  live={d.at_risk_projects > 0}
                 />
                 <StatChip label="Avg. Health" value={<AnimatedNumber value={d.avg_health_score} format={(n) => Math.round(n).toString()} />} />
               </div>
@@ -322,23 +363,13 @@ export default function DashboardPage() {
               label="Open Risks"
               value={<AnimatedNumber value={riskEntries.reduce((s, [, v]) => s + v, 0)} />}
               tone={riskEntries.some(([k]) => k === "CRITICAL") ? "critical" : "neutral"}
+              live={riskEntries.some(([k]) => k === "CRITICAL")}
               className="mb-3"
             />
             {riskEntries.length === 0 ? (
               <EmptyState title="No risks recorded" />
             ) : (
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={riskEntries.map(([k, v]) => ({ name: k, value: v }))} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={3} cornerRadius={6} stroke="var(--bg-surface)" strokeWidth={2}>
-                      {riskEntries.map(([k]) => (
-                        <Cell key={k} fill={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} />
-                      ))}
-                    </Pie>
-                    <RTooltip contentStyle={tooltipStyle} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+              <RiskHealthRings3D entries={riskEntries} />
             )}
             <ul className="mt-2 space-y-1.5">
               {riskEntries.map(([k, v]) => (
@@ -529,19 +560,32 @@ function StatChip({
   value,
   icon,
   tone = "neutral",
+  live = false,
   className,
 }: {
   label: string;
   value: React.ReactNode;
   icon?: React.ReactNode;
   tone?: "critical" | "neutral";
+  // Telemetry accent (globals.css's .telemetry-accent): a slow sweeping ring, reserved for a
+  // stat that genuinely warrants a second look right now (e.g. "At Risk" > 0, a critical risk
+  // present) — never applied uniformly, or the accent stops meaning anything.
+  live?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cn("min-w-0 rounded-lg border border-border-default/60 bg-subtle/70 px-2.5 py-2 sm:px-3", className)}>
+    <div
+      className={cn(
+        "relative min-w-0 rounded-lg border border-border-default/60 bg-subtle/70 px-2.5 py-2 sm:px-3",
+        live && "telemetry-accent",
+        className,
+      )}
+      style={live ? ({ "--telemetry-tone": "var(--critical-solid)" } as React.CSSProperties) : undefined}
+    >
       <div className="flex min-w-0 items-center gap-1.5 text-text-tertiary">
         {icon}
         <p className="min-w-0 truncate text-[11px] font-medium uppercase tracking-wide">{label}</p>
+        {live && <PulseDot tone="critical" className="ms-auto" />}
       </div>
       <p className={cn("mt-0.5 truncate font-tabular text-lg font-semibold", tone === "critical" ? "text-critical-fg" : "text-text-primary")}>{value}</p>
     </div>
