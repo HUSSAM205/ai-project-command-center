@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -70,22 +71,34 @@ async def upload_document(
     DEMO_UPLOAD_LIMIT_PER_HOUR/DEMO_UPLOAD_MAX_BYTES/DEMO_UPLOAD_TTL_MINUTES above — everyone else
     still gets a flat 403. Parsing, chunking, and local embedding happen in a background task; the
     document starts PENDING and the frontend polls GET /documents(/{id}) to watch it move to
-    PROCESSING -> READY|FAILED, exactly the same pipeline either way."""
+    PROCESSING -> READY|FAILED, exactly the same pipeline either way.
+
+    This route is `async def` (needed for `await file.read()` below), which means -- unlike every
+    other route in this file, which is a plain `def` FastAPI auto-offloads to a worker thread --
+    nothing in its body gets threadpool protection for free. This single Uvicorn worker's event
+    loop stays blocked for the full duration of any synchronous call made directly in an `async
+    def` handler, which under real load can starve every other in-flight request (including a
+    concurrent /health check) for as long as the disk write and DB commits below take. Every
+    blocking call here is explicitly run via asyncio.to_thread so this route behaves the same as
+    the sync ones instead of being the one exception."""
     is_demo = principal.session_id is not None
     if not is_demo and principal.read_only:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="read-only access")
 
     if is_demo:
-        _cleanup_expired_demo_uploads(db)
+        await asyncio.to_thread(_cleanup_expired_demo_uploads, db)
         since = datetime.now(timezone.utc) - timedelta(hours=1)
-        if count_recent_demo_uploads(db, principal.session_id, since) >= DEMO_UPLOAD_LIMIT_PER_HOUR:
+        recent_count = await asyncio.to_thread(count_recent_demo_uploads, db, principal.session_id, since)
+        if recent_count >= DEMO_UPLOAD_LIMIT_PER_HOUR:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Demo upload limit reached ({DEMO_UPLOAD_LIMIT_PER_HOUR}/hour). Try again later.",
             )
 
-    if project_id is not None and get_project(db, principal.organization_id, project_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
+    if project_id is not None:
+        project = await asyncio.to_thread(get_project, db, principal.organization_id, project_id)
+        if project is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="project not found")
 
     data = await file.read()
     if is_demo and len(data) > DEMO_UPLOAD_MAX_BYTES:
@@ -98,9 +111,10 @@ async def upload_document(
     except UnsupportedFileError as exc:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)) from exc
 
-    storage_path = save_upload(principal.organization_id, file.filename or "upload", data)
+    storage_path = await asyncio.to_thread(save_upload, principal.organization_id, file.filename or "upload", data)
 
-    document = create_document(
+    document = await asyncio.to_thread(
+        create_document,
         db,
         organization_id=principal.organization_id,
         project_id=project_id,
@@ -114,7 +128,8 @@ async def upload_document(
 
     background_tasks.add_task(process_document, document.id, document.filename, document.storage_path)
 
-    log_audit_event(
+    await asyncio.to_thread(
+        log_audit_event,
         db,
         organization_id=principal.organization_id,
         actor_user_id=principal.user_id,
@@ -167,13 +182,22 @@ def get_document_detail(
 
     extraction: AIResponse | None = None
     if document.status == DocumentStatus.READY:
-        ai_router.enforce_rate_limit(scope_key=_scope_key(principal), read_only=principal.read_only)
+        # This page polls every few seconds while a document is processing (frontend/app/app/
+        # documents/[id]/page.tsx) and keeps rendering normally for a while after it reaches
+        # READY too -- an unchanged filename/text means an unchanged cache key, so a repeat view
+        # of the same document is a real cache hit, not a new AI request. Charging the rate limit
+        # for it would drain a visitor's whole hourly budget on nothing but re-reading one answer.
+        extraction_context = {"filename": document.filename, "text": document.extracted_text or ""}
+        if not ai_router.is_cached(
+            organization_id=principal.organization_id, method_name="analyze_document", context=extraction_context
+        ):
+            ai_router.enforce_rate_limit(scope_key=_scope_key(principal), read_only=principal.read_only)
         extraction = ai_router.dispatch(
             db,
             organization_id=principal.organization_id,
             endpoint=f"/api/v1/documents/{document_id}",
             method_name="analyze_document",
-            context={"filename": document.filename, "text": document.extracted_text or ""},
+            context=extraction_context,
         )
         log_audit_event(
             db,
@@ -209,8 +233,6 @@ def ask_document_question(
             detail=f"document is not ready for Q&A yet (status: {document.status.value})",
         )
 
-    ai_router.enforce_rate_limit(scope_key=_scope_key(principal), read_only=principal.read_only)
-
     query_embedding = embed_text(payload.question)
     results = search_similar_chunks(db, document_id, query_embedding, limit=TOP_K_CHUNKS)
     chunks = [
@@ -222,13 +244,20 @@ def ask_document_question(
         }
         for chunk, similarity in results
     ]
+    ask_context = {"question": payload.question, "filename": document.filename, "chunks": chunks}
+    # Same question against the same (deterministic, local) retrieval -> same cache key -> a real
+    # cache hit, not a new request. See the matching comment on get_document_detail above.
+    if not ai_router.is_cached(
+        organization_id=principal.organization_id, method_name="answer_document_question", context=ask_context
+    ):
+        ai_router.enforce_rate_limit(scope_key=_scope_key(principal), read_only=principal.read_only)
 
     response = ai_router.dispatch(
         db,
         organization_id=principal.organization_id,
         endpoint=f"/api/v1/documents/{document_id}/ask",
         method_name="answer_document_question",
-        context={"question": payload.question, "filename": document.filename, "chunks": chunks},
+        context=ask_context,
     )
     log_audit_event(
         db,

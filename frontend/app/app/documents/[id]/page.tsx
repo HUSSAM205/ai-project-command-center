@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { AlertTriangle, Clock, FileText, Loader2, ShieldPlus, SendHorizonal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { useBackoffPoll } from "@/lib/useBackoffPoll";
 import { useToast } from "@/components/ui/Toast";
 import type { AIResponse, DocumentCitation, DocumentExtractionData } from "@/lib/types";
 import { AISourceBadge, Badge, documentStatusTone } from "@/components/ui/Badge";
@@ -40,28 +41,27 @@ export default function DocumentDetailPage({ params }: { params: Promise<{ id: s
   const createdAt = detail.data?.document.created_at;
 
   // The old copy here claimed "this page updates automatically" without any polling behind it —
-  // a PENDING/PROCESSING document just sat on a static spinner forever. This actually polls (same
-  // interval the Documents list page already uses), and separately tracks how long it's been
-  // stuck: if the backend's background task never reports back (e.g. a dyno restart mid-job, with
-  // no real retry/dead-letter handling — a genuine gap, not something this page can fix), staying
-  // silent about that is worse than a plain spinner. STALL_MS is generous — real processing is
-  // usually seconds — so this only fires for a job that's actually stuck, not a slow one.
+  // a PENDING/PROCESSING document just sat on a static spinner forever. This actually polls (10s,
+  // then 20s, then 30s — see lib/useBackoffPoll.ts, same schedule the Documents list page uses),
+  // and separately tracks how long it's been stuck: if the backend's background task never
+  // reports back (e.g. a dyno restart mid-job, with no real retry/dead-letter handling — a
+  // genuine gap, not something this page can fix), staying silent about that is worse than a
+  // plain spinner. STALL_MS is generous — real processing is usually seconds — so this only fires
+  // for a job that's actually stuck, not a slow one.
   const [stalled, setStalled] = useState(false);
+  useBackoffPoll(inProgress, detail.reload);
   useEffect(() => {
     // Nothing to reset when processing finishes: the banners below are also gated on
-    // `inProgress`, so a stale `stalled=true` from a finished job simply stops being read.
+    // `inProgress`, so a stale `stalled=true` from a finished job simply stops being read. A
+    // plain client-side clock check, not a network call, so it stays on a cheap fixed interval
+    // rather than needing the backoff schedule above.
     if (!inProgress) return;
     const STALL_MS = 90_000;
     const startedAt = createdAt ? new Date(createdAt).getTime() : Date.now();
-    const pollId = setInterval(() => detail.reload(), 3000);
     const stallId = setInterval(() => {
       if (Date.now() - startedAt > STALL_MS) setStalled(true);
     }, 3000);
-    return () => {
-      clearInterval(pollId);
-      clearInterval(stallId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- detail.reload is stable; re-running per tick is the point
+    return () => clearInterval(stallId);
   }, [inProgress, createdAt]);
 
   if (detail.loading) {

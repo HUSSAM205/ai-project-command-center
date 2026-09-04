@@ -6,7 +6,11 @@ import type { DashboardSummary } from "./types";
 
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline";
 
-const POLL_INTERVAL_MS = 4000;
+// Healthy polling stays snappy at 4s; a run of consecutive failures backs off instead of
+// hammering the single backend worker every 4s indefinitely (mirrors the same principle as the
+// PMO Workspace and Documents pages' backoff fixes -- a sustained outage should be polled less
+// often, not retried into faster). Resets to the front of this list the moment a tick succeeds.
+const POLL_BACKOFF_STEPS_MS = [4000, 8000, 16000, 30000];
 // A single dropped SSE ping (or one slow poll tick) can flip the raw status to "reconnecting" for
 // a moment before it self-corrects on the very next event/tick -- that's real, but showing it to a
 // visitor for under a second reads as flicker rather than signal. Hold the *displayed* status a
@@ -64,7 +68,7 @@ export function useDashboardStream() {
   useEffect(() => {
     let cancelled = false;
     let es: EventSource | null = null;
-    let pollId: ReturnType<typeof setInterval> | null = null;
+    let pollId: ReturnType<typeof setTimeout> | null = null;
     let everConnected = false;
 
     function applyData(d: DashboardSummary) {
@@ -86,20 +90,25 @@ export function useDashboardStream() {
 
     function startPolling() {
       if (pollId) return;
+      let failureStreak = 0;
       const tick = () => {
         api
           .dashboard()
           .then((d) => {
+            failureStreak = 0;
             applyData(d);
             if (!cancelled) setStatus("live");
           })
           .catch((err) => {
             applyFailure(err);
             if (!cancelled) setStatus(dataRef.current ? "reconnecting" : "offline");
+            failureStreak = Math.min(failureStreak + 1, POLL_BACKOFF_STEPS_MS.length - 1);
+          })
+          .finally(() => {
+            if (!cancelled) pollId = setTimeout(tick, POLL_BACKOFF_STEPS_MS[failureStreak]);
           });
       };
       tick();
-      pollId = setInterval(tick, POLL_INTERVAL_MS);
     }
 
     // Always fetch once via the plain endpoint immediately, independent of SSE — this is what
@@ -111,7 +120,7 @@ export function useDashboardStream() {
       startPolling();
       return () => {
         cancelled = true;
-        if (pollId) clearInterval(pollId);
+        if (pollId) clearTimeout(pollId);
       };
     }
 
@@ -121,7 +130,7 @@ export function useDashboardStream() {
       startPolling();
       return () => {
         cancelled = true;
-        if (pollId) clearInterval(pollId);
+        if (pollId) clearTimeout(pollId);
       };
     }
 
@@ -158,7 +167,7 @@ export function useDashboardStream() {
     return () => {
       cancelled = true;
       es?.close();
-      if (pollId) clearInterval(pollId);
+      if (pollId) clearTimeout(pollId);
     };
   }, [retryKey]);
 

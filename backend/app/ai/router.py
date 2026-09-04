@@ -204,6 +204,14 @@ class AIRouter:
 
     # ---- main entrypoint ----
 
+    def is_cached(self, *, organization_id: UUID, method_name: str, context: dict) -> bool:
+        """True if dispatch() would serve this exact call from cache -- callers should skip
+        enforce_rate_limit in that case, since a cache hit does zero real AI work and costs
+        nothing. Exists because polling an already-analyzed document (or re-viewing the same
+        executive brief) with an unchanged context is a read, not a new AI request, and
+        shouldn't drain a visitor's hourly budget just for looking at the same answer twice."""
+        return self._cache_get(self._cache_key(organization_id, method_name, context)) is not None
+
     def dispatch(
         self,
         db: Session,
@@ -216,7 +224,16 @@ class AIRouter:
         started = time.monotonic()
         provider_used = "none"
         success = False
+        cache_key = self._cache_key(organization_id, method_name, context)
         try:
+            # Checked first, ahead of live providers too: identical input, identical answer, so
+            # there is never a reason to redo the work (live or Demo AI) once it exists.
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                provider_used = "cache"
+                success = True
+                return cached
+
             for provider in self._live_providers:
                 if not provider.is_available():
                     continue
@@ -231,18 +248,20 @@ class AIRouter:
                 self._record_success(provider.name)
                 provider_used = provider.name
                 success = True
-                self._cache_set(self._cache_key(organization_id, method_name, context), response)
+                self._cache_set(cache_key, response)
                 return response
 
-            cached = self._cache_get(self._cache_key(organization_id, method_name, context))
-            if cached is not None:
-                provider_used = "cache"
-                success = True
-                return cached
-
+            # Demo AI mode (no live provider keys configured -- the default in this deployment)
+            # previously never reached _cache_set at all, since only a successful live-provider
+            # call above ever wrote to the cache. That made caching entirely inert here: every
+            # repeated call recomputed from scratch and, worse, called enforce_rate_limit for real
+            # every time -- so routinely polling one already-READY document's status could drain
+            # a visitor's whole hourly AI budget on nothing but re-reading the same answer. Demo AI
+            # responses are just as real and just as cacheable as a live provider's.
             response = getattr(self.demo, method_name)(context)
             provider_used = "demo_ai"
             success = True
+            self._cache_set(cache_key, response)
             return response
         finally:
             latency_ms = int((time.monotonic() - started) * 1000)

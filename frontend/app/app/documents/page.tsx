@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, Upload, Sparkles } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { useBackoffPoll } from "@/lib/useBackoffPoll";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/components/ui/Toast";
@@ -43,14 +44,13 @@ export default function DocumentsPage() {
   const documents = documentsApi.data ?? [];
   const hasInProgress = documents.some((d) => IN_PROGRESS_STATUSES.has(d.status));
 
-  // Poll while any document is still PENDING/PROCESSING so the list picks up READY/FAILED
-  // as the background pipeline (parse -> chunk -> embed) finishes, without a manual refresh.
-  useEffect(() => {
-    if (!hasInProgress) return;
-    const interval = setInterval(() => documentsApi.reload(), 3000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasInProgress]);
+  // Poll (10s, then 20s, then 30s -- see lib/useBackoffPoll.ts) while any document is still
+  // PENDING/PROCESSING so the list picks up READY/FAILED as the background pipeline (parse ->
+  // chunk -> embed) finishes, without a manual refresh. Stops entirely once nothing is in
+  // progress -- including when the list is empty, since hasInProgress is false either way. A
+  // failed tick never blanks the list or shows a red error box (see useApi.ts and the render
+  // logic below) -- it just quietly tries again on the same backed-off schedule.
+  useBackoffPoll(hasInProgress, documentsApi.reload);
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
