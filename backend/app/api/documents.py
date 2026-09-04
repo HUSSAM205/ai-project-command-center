@@ -16,7 +16,9 @@ from app.repositories.documents import (
     get_document,
     list_documents,
     list_expired_demo_documents,
+    list_stuck_processing_documents,
     search_similar_chunks,
+    set_document_status,
 )
 from app.repositories.projects import get_project
 from app.schemas.ai import AIResponse
@@ -40,6 +42,17 @@ DEMO_UPLOAD_LIMIT_PER_HOUR = 3
 DEMO_UPLOAD_MAX_BYTES = 2 * 1024 * 1024  # 2MB
 DEMO_UPLOAD_TTL_MINUTES = 60
 
+# process_document runs as a plain FastAPI BackgroundTask -- there is no durable queue behind it
+# (confirmed: no ARQ/Celery/RQ anywhere in this codebase or its dependencies), so it is not
+# resumable. If this single Uvicorn worker's process restarts (e.g. Render reclaiming memory)
+# between "upload response sent" and "background task actually runs", the task is gone -- nothing
+# in process_document itself can detect or recover from that, because it never runs at all. This
+# is the honest floor: a document can't be *guaranteed* to finish, but it can be guaranteed to
+# never sit in PROCESSING forever. Generous relative to how fast this pipeline actually runs (a
+# tiny text file embeds in well under a second) specifically so a large real PDF's legitimately
+# longer parse/chunk/embed time is never mistaken for a lost task.
+PROCESSING_STUCK_MINUTES = 3
+
 
 def _scope_key(principal: CurrentPrincipal) -> str:
     # session_id (unique per anonymous token) takes priority over user_id (the same shared
@@ -55,6 +68,21 @@ def _cleanup_expired_demo_uploads(db: Session) -> None:
     for document in list_expired_demo_documents(db, cutoff):
         delete_upload(document.storage_path)
         delete_document(db, document)
+
+
+def _fail_stuck_processing_documents(db: Session) -> None:
+    """See PROCESSING_STUCK_MINUTES above. Same lazy-reconciliation shape as the demo-upload TTL
+    reap: no scheduler in this deployment, so this runs on the read paths that would otherwise
+    just keep showing a document stuck on PENDING/PROCESSING indefinitely."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=PROCESSING_STUCK_MINUTES)
+    for document in list_stuck_processing_documents(db, cutoff):
+        set_document_status(
+            db,
+            document.id,
+            DocumentStatus.FAILED,
+            "Processing did not complete in time -- the background worker may have restarted "
+            "mid-task. Try uploading the file again.",
+        )
 
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -162,6 +190,7 @@ def list_all_documents(
     db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
     _cleanup_expired_demo_uploads(db)
+    _fail_stuck_processing_documents(db)
     documents = list_documents(db, principal.organization_id, project_id, viewer_session_id=principal.session_id)
     return [DocumentOut.model_validate(d) for d in documents]
 
@@ -176,6 +205,7 @@ def get_document_detail(
     """Returns the document plus a structured extraction (requirements, deliverables,
     dates, risks, action items, missing information) built from its real parsed text via
     AIRouter.analyze_document. Extraction is null until the document reaches READY."""
+    _fail_stuck_processing_documents(db)
     document = get_document(db, principal.organization_id, document_id, viewer_session_id=principal.session_id)
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")

@@ -88,6 +88,17 @@ def list_expired_demo_documents(db: Session, before: datetime) -> list[Document]
     return list(db.scalars(stmt).all())
 
 
+def list_stuck_processing_documents(db: Session, before: datetime) -> list[Document]:
+    """Documents whose background pipeline (process_document) never reported back -- see
+    app/api/documents.py's stuck-processing reconciliation for why this can happen even though
+    nothing in the pipeline itself hangs."""
+    stmt = select(Document).where(
+        Document.status.in_([DocumentStatus.PENDING, DocumentStatus.PROCESSING]),
+        Document.created_at < before,
+    )
+    return list(db.scalars(stmt).all())
+
+
 def delete_document(db: Session, document: Document) -> None:
     db.delete(document)  # document_chunks cascade via ondelete=CASCADE
     db.commit()
