@@ -10,7 +10,7 @@ from app.core.database import Base
 from app.models.base import UUIDPKMixin
 from app.models.enums import DocumentStatus
 
-EMBEDDING_DIM = 384  # all-MiniLM-L6-v2
+EMBEDDING_DIM = 384  # must match app/services/embeddings.py's EMBEDDING_DIM (hashing-trick, not a neural model)
 
 
 class Document(UUIDPKMixin, Base):
@@ -66,7 +66,8 @@ class DocumentChunk(UUIDPKMixin, Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # Local sentence-transformers embedding (all-MiniLM-L6-v2, 384-dim) — never a hosted embedding API.
+    # Local hashing-trick bag-of-words embedding, 384-dim (see app/services/embeddings.py's module
+    # docstring for why this isn't a neural model) — never a hosted embedding API.
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
