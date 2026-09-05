@@ -8,10 +8,11 @@ from app.ai.router import AIRouter as AIOrchestrator
 from app.ai.router import get_ai_router
 from app.api.serializers import serialize_project
 from app.core.database import get_db
-from app.core.deps import CurrentPrincipal, get_current_principal, require_write_access
-from app.repositories.projects import get_project, list_projects
+from app.core.deps import CurrentPrincipal, get_current_principal
+from app.repositories.projects import get_project, list_projects_for_portfolio
 from app.repositories.risks import list_risks_for_project
 from app.repositories.tasks import list_tasks_for_project
+from app.models.enums import UtilizationState
 from app.models.project import Project
 from app.schemas.ai import AIResponse
 from app.schemas.project import (
@@ -38,30 +39,62 @@ def _get_project_or_404(db: Session, organization_id: UUID, project_id: UUID) ->
     return project
 
 
+def _authorize_project_mutation(principal: CurrentPrincipal, project: Project) -> None:
+    """A real account (principal.read_only is always False -- see app/api/auth.py) is unrestricted
+    within its own org, exactly as before. A demo/read-only session may only mutate a project it
+    created itself (Project.created_by_session_id, set at creation time in create_project below)
+    -- every seeded program (created_by_session_id is None) and every other session's own project
+    stays protected. This is checked per-project rather than at the dependency layer because
+    ownership lives in a DB column, not a JWT claim."""
+    if principal.read_only:
+        # Guards against a None == None false-positive: a project with no owner recorded (every
+        # seeded program) must never match a session that also happens to have no session_id.
+        owns_it = project.created_by_session_id is not None and project.created_by_session_id == principal.session_id
+        if not owns_it:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This is a shared example program. Demo sessions can only edit or delete projects they created themselves.",
+            )
+
+
 @router.get("", response_model=list[ProjectOut])
 def list_all_projects(
     principal: CurrentPrincipal = Depends(get_current_principal), db: Session = Depends(get_db)
 ) -> list[ProjectOut]:
-    projects = list_projects(db, principal.organization_id)
+    # list_projects_for_portfolio eager-loads tasks/risks/allocations (selectinload) in a fixed
+    # small number of queries -- previously this issued 3 extra queries per project (tasks, risks,
+    # allocations-for-overloaded-count), which scaled linearly with portfolio size and became
+    # measurably slower once the seeded portfolio grew past a handful of projects.
+    projects = list_projects_for_portfolio(db, principal.organization_id)
     resource_states = compute_all_resource_states(db, principal.organization_id)
     out = []
     for project in projects:
-        tasks = list_tasks_for_project(db, principal.organization_id, project.id)
-        risks = list_risks_for_project(db, principal.organization_id, project.id)
-        overloaded = count_overloaded_resources_for_project(
-            db, principal.organization_id, project.id, resource_states
-        )
-        out.append(serialize_project(project, tasks, risks, overloaded))
+        overloaded_resource_ids = {
+            a.resource_id
+            for a in project.allocations
+            if resource_states.get(a.resource_id, (0, None))[1] == UtilizationState.OVERLOADED
+        }
+        out.append(serialize_project(project, project.tasks, project.risks, len(overloaded_resource_ids)))
     return out
 
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 def create_project(
     payload: ProjectCreate,
-    principal: CurrentPrincipal = Depends(require_write_access),
+    principal: CurrentPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> ProjectOut:
-    project = Project(organization_id=principal.organization_id, **payload.model_dump())
+    """Unlike every other mutating endpoint in this file, this one is NOT behind
+    require_write_access -- a demo/read-only session may create a real, permanently-persisted
+    project of its own (principal.session_id, None for a real account, tags ownership so that
+    session -- and only that session -- can later edit or delete it; see
+    _authorize_project_mutation above). The 8 seeded flagship programs and every other session's
+    projects are unaffected: they all have created_by_session_id=None or a different session's id."""
+    project = Project(
+        organization_id=principal.organization_id,
+        created_by_session_id=principal.session_id,
+        **payload.model_dump(),
+    )
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -94,10 +127,11 @@ def get_project_detail(
 def update_project(
     project_id: UUID,
     payload: ProjectUpdate,
-    principal: CurrentPrincipal = Depends(require_write_access),
+    principal: CurrentPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> ProjectOut:
     project = _get_project_or_404(db, principal.organization_id, project_id)
+    _authorize_project_mutation(principal, project)
     changed_fields = payload.model_dump(exclude_unset=True)
     for field, value in changed_fields.items():
         setattr(project, field, value)
@@ -121,10 +155,11 @@ def update_project(
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: UUID,
-    principal: CurrentPrincipal = Depends(require_write_access),
+    principal: CurrentPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> None:
     project = _get_project_or_404(db, principal.organization_id, project_id)
+    _authorize_project_mutation(principal, project)
     db.delete(project)
     db.commit()
 

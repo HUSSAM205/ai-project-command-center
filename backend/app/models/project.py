@@ -36,6 +36,13 @@ class Project(UUIDPKMixin, TimestampMixin, Base):
     actual_cost: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # Null for every project created by a real account or seeded by app/seed*.py -- those are
+    # never subject to the demo-session ownership check below. Set only when a read-only demo
+    # session creates its own project (app/api/projects.py's create_project), so that session can
+    # later edit/delete that one project while every shared seeded program stays protected. Same
+    # convention as Document.uploaded_session_id (app/models/document.py).
+    created_by_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
     # NOTE: health_score and risk_level are intentionally NOT persisted columns —
     # per PRODUCT_REQUIREMENTS.md they are computed on read by app/services/health_score.py
     # and never stored as source of truth.
