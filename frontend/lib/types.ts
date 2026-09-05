@@ -556,6 +556,24 @@ export interface EVM {
   anomalies: EVMAnomaly[];
 }
 
+export interface WhatIfInputs {
+  delay_days: number;
+  budget_delta: number;
+  scope_change_percent: number;
+}
+
+export interface WhatIfScenario {
+  evm: EVM;
+  monte_carlo: MonteCarloForecast;
+}
+
+export interface WhatIfResult {
+  project_id: string;
+  baseline: WhatIfScenario;
+  scenario: WhatIfScenario;
+  inputs: WhatIfInputs;
+}
+
 export interface RaciEntry {
   id: string;
   project_id: string;

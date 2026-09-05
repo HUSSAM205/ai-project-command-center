@@ -55,6 +55,7 @@ import type {
   Risk,
   StageGate,
   Task,
+  WhatIfResult,
 } from "@/lib/types";
 import { STAGE_GATE_ORDER } from "@/lib/types";
 
@@ -818,6 +819,7 @@ function PMOTab({
   return (
     <div className="space-y-6">
       <EVMCard loading={evm.loading} error={evm.error} data={evm.data} onRetry={evm.reload} />
+      <WhatIfCard projectId={projectId} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ContractLedgerCard loading={contractLedger.loading} error={contractLedger.error} data={contractLedger.data} onRetry={contractLedger.reload} />
         <StageGatesCard loading={stageGates.loading} error={stageGates.error} data={stageGates.data} onRetry={stageGates.reload} />
@@ -920,6 +922,162 @@ function EVMCard({
               </div>
             )}
           </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Deliberately per-project, not portfolio-wide -- EVM/Monte Carlo/task estimates are all
+// project-scoped in this schema (see docs/ENTERPRISE_ARCHITECTURE_SPEC.md §2.6), so a true
+// cross-portfolio what-if would need a separate aggregation engine, not built here.
+function WhatIfCard({ projectId }: { projectId: string }) {
+  const [delayDays, setDelayDays] = useState(0);
+  const [budgetDelta, setBudgetDelta] = useState(0);
+  const [scopeChangePercent, setScopeChangePercent] = useState(0);
+  const [result, setResult] = useState<WhatIfResult | null>(null);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const hasChanges = delayDays !== 0 || budgetDelta !== 0 || scopeChangePercent !== 0;
+
+  const runScenario = useCallback(async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      const data = await pmoApi.whatIf(projectId, {
+        delay_days: delayDays,
+        budget_delta: budgetDelta,
+        scope_change_percent: scopeChangePercent,
+      });
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error("What-if recalculation failed"));
+    } finally {
+      setRunning(false);
+    }
+  }, [projectId, delayDays, budgetDelta, scopeChangePercent]);
+
+  const deltaRows: { label: string; baseline: string; scenario: string; changed: boolean }[] = result
+    ? [
+        { label: "EAC", baseline: formatCurrency(result.baseline.evm.eac), scenario: formatCurrency(result.scenario.evm.eac), changed: result.baseline.evm.eac !== result.scenario.evm.eac },
+        { label: "VAC", baseline: formatCurrency(result.baseline.evm.vac), scenario: formatCurrency(result.scenario.evm.vac), changed: result.baseline.evm.vac !== result.scenario.evm.vac },
+        {
+          label: "CPI",
+          baseline: result.baseline.evm.cpi !== null ? result.baseline.evm.cpi.toFixed(2) : "—",
+          scenario: result.scenario.evm.cpi !== null ? result.scenario.evm.cpi.toFixed(2) : "—",
+          changed: result.baseline.evm.cpi !== result.scenario.evm.cpi,
+        },
+        { label: "P50 delivery", baseline: formatDate(result.baseline.monte_carlo.p50_date), scenario: formatDate(result.scenario.monte_carlo.p50_date), changed: result.baseline.monte_carlo.p50_date !== result.scenario.monte_carlo.p50_date },
+        { label: "P85 delivery", baseline: formatDate(result.baseline.monte_carlo.p85_date), scenario: formatDate(result.scenario.monte_carlo.p85_date), changed: result.baseline.monte_carlo.p85_date !== result.scenario.monte_carlo.p85_date },
+        { label: "P95 delivery", baseline: formatDate(result.baseline.monte_carlo.p95_date), scenario: formatDate(result.scenario.monte_carlo.p95_date), changed: result.baseline.monte_carlo.p95_date !== result.scenario.monte_carlo.p95_date },
+      ]
+    : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>What-If Scenario Sandbox</CardTitle>
+          <CardDescription>Model a delay, budget change, or scope change — recalculates real EVM and Monte Carlo forecasts, nothing is saved</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+          <div>
+            <div className="flex items-baseline justify-between">
+              <label className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Delay</label>
+              <span className="font-tabular text-sm font-semibold text-text-primary">{delayDays > 0 ? `+${delayDays}` : delayDays} days</span>
+            </div>
+            <input
+              type="range"
+              min={-90}
+              max={180}
+              step={5}
+              value={delayDays}
+              onChange={(e) => setDelayDays(Number(e.target.value))}
+              className="mt-2 w-full accent-brand-500"
+              aria-label="Schedule delay in days"
+            />
+          </div>
+          <div>
+            <div className="flex items-baseline justify-between">
+              <label className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Budget change</label>
+              <span className="font-tabular text-sm font-semibold text-text-primary">{budgetDelta > 0 ? "+" : ""}{formatCompactCurrency(budgetDelta)}</span>
+            </div>
+            <input
+              type="range"
+              min={-500000}
+              max={500000}
+              step={10000}
+              value={budgetDelta}
+              onChange={(e) => setBudgetDelta(Number(e.target.value))}
+              className="mt-2 w-full accent-brand-500"
+              aria-label="Budget change in dollars"
+            />
+          </div>
+          <div>
+            <div className="flex items-baseline justify-between">
+              <label className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Scope change</label>
+              <span className="font-tabular text-sm font-semibold text-text-primary">{scopeChangePercent > 0 ? "+" : ""}{scopeChangePercent}%</span>
+            </div>
+            <input
+              type="range"
+              min={-50}
+              max={100}
+              step={5}
+              value={scopeChangePercent}
+              onChange={(e) => setScopeChangePercent(Number(e.target.value))}
+              className="mt-2 w-full accent-brand-500"
+              aria-label="Scope change percent"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center gap-3">
+          <Button size="sm" loading={running} disabled={!hasChanges} onClick={() => void runScenario()}>
+            Recalculate
+          </Button>
+          {result && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setDelayDays(0);
+                setBudgetDelta(0);
+                setScopeChangePercent(0);
+                setResult(null);
+              }}
+            >
+              Reset
+            </Button>
+          )}
+          <span className="text-xs text-text-tertiary">Nothing here is written to the database — this is a read-only recalculation.</span>
+        </div>
+
+        {error && <div className="mt-4"><ErrorState description={error.message} onRetry={() => void runScenario()} /></div>}
+
+        {result && !error && (
+          <div className="mt-5 overflow-x-auto border-t border-border-default pt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs font-medium uppercase tracking-wide text-text-tertiary">
+                  <th className="pb-2 pr-4">Metric</th>
+                  <th className="pb-2 pr-4">Baseline (today)</th>
+                  <th className="pb-2">Scenario</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deltaRows.map((row) => (
+                  <tr key={row.label} className="border-t border-border-default">
+                    <td className="py-2 pr-4 text-text-secondary">{row.label}</td>
+                    <td className="py-2 pr-4 font-tabular text-text-tertiary">{row.baseline}</td>
+                    <td className={cn("py-2 font-tabular font-semibold", row.changed ? "text-brand-600 dark:text-brand-400" : "text-text-primary")}>{row.scenario}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </CardContent>
     </Card>

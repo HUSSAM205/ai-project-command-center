@@ -18,6 +18,8 @@ import type {
   RaciEntry,
   StageGate,
   StageGateStatus,
+  WhatIfInputs,
+  WhatIfResult,
 } from "./types";
 
 interface RequestOptions {
@@ -79,6 +81,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 export const pmoApi = {
   // EVM (computed on read — no persistence)
   evm: (projectId: string) => request<EVM>(`/projects/${projectId}/evm`),
+
+  // What-If Scenario Engine — recomputes EVM + the Monte Carlo delivery forecast against a
+  // hypothetical delay/budget-cut/scope-change (app/services/whatif.py). Read-only: no
+  // persistence occurs on the server for this call.
+  whatIf: (projectId: string, payload: WhatIfInputs) =>
+    request<WhatIfResult>(`/projects/${projectId}/what-if`, { method: "POST", body: payload }),
 
   // RACI matrix
   raci: (projectId: string) => request<RaciEntry[]>(`/projects/${projectId}/raci`),

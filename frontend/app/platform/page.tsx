@@ -372,8 +372,16 @@ function FinalCta() {
 
 function SiteFooter() {
   return (
-    <footer className="px-4 py-10 text-center text-xs text-text-tertiary md:px-8">
-      <p>AI Project Management System — Phase 1</p>
+    <footer className="border-t border-border-default px-4 py-10 md:px-8">
+      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 text-xs text-text-tertiary sm:flex-row sm:justify-between">
+        <p>AI Project Management System</p>
+        <nav className="flex items-center gap-4">
+          <Link href="/security" className="transition-colors hover:text-text-primary">Security</Link>
+          <Link href="/privacy" className="transition-colors hover:text-text-primary">Privacy</Link>
+          <Link href="/terms" className="transition-colors hover:text-text-primary">Terms</Link>
+          <Link href="/governance" className="transition-colors hover:text-text-primary">Governance</Link>
+        </nav>
+      </div>
     </footer>
   );
 }
