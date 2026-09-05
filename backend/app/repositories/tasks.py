@@ -36,6 +36,18 @@ def list_all_tasks_for_org(db: Session, organization_id: UUID) -> list[Task]:
     return list(db.scalars(stmt).all())
 
 
+def list_dependencies_for_project(db: Session, organization_id: UUID, project_id: UUID) -> list[TaskDependency]:
+    """Every dependency edge whose dependent task belongs to this project -- the full edge set
+    app/services/bottleneck_detection.py needs to build the project's task DAG for CPM."""
+    stmt = (
+        select(TaskDependency)
+        .join(Task, TaskDependency.task_id == Task.id)
+        .join(Project, Task.project_id == Project.id)
+        .where(Project.organization_id == organization_id, Task.project_id == project_id)
+    )
+    return list(db.scalars(stmt).all())
+
+
 def get_dependency(db: Session, organization_id: UUID, dependency_id: UUID) -> TaskDependency | None:
     stmt = (
         select(TaskDependency)

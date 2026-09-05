@@ -10,12 +10,15 @@ from app.api.serializers import serialize_project
 from app.core.database import get_db
 from app.core.deps import CurrentPrincipal, get_current_principal
 from app.repositories.projects import get_project, list_projects_for_portfolio
+from app.repositories.resources import list_resources
 from app.repositories.risks import list_risks_for_project
-from app.repositories.tasks import list_tasks_for_project
+from app.repositories.tasks import list_dependencies_for_project, list_tasks_for_project
 from app.models.enums import UtilizationState
 from app.models.project import Project
 from app.schemas.ai import AIResponse
 from app.schemas.project import (
+    BottleneckCandidateOut,
+    BottleneckOut,
     CostForecastOut,
     HealthScoreOut,
     MonteCarloForecastOut,
@@ -24,6 +27,7 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.services.audit import log_audit_event
+from app.services.bottleneck_detection import detect_bottlenecks
 from app.services.cost_forecast import compute_cost_forecast
 from app.services.health_score import compute_health_score
 from app.services.monte_carlo import compute_monte_carlo_forecast
@@ -240,6 +244,54 @@ def get_project_monte_carlo_forecast(
         method=result.method,
         runs=result.runs,
     )
+
+
+@router.get("/{project_id}/bottlenecks", response_model=list[BottleneckOut])
+def get_project_bottlenecks(
+    project_id: UUID,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> list[BottleneckOut]:
+    """Real Critical Path Method over this project's actual task_dependencies graph
+    (app/services/bottleneck_detection.py) -- flags a critical-path task that is genuinely behind
+    (BLOCKED, or past its due date and not DONE), its real transitive downstream impact, and a
+    suggested reassignment reusing the same explainable candidate-ranking the Resources page's
+    "Suggest Assignees" card already uses (app/services/resource_optimization.py) -- never a
+    fabricated suggestion. A plain `def` route so FastAPI offloads the CPM computation to its
+    worker threadpool, same as the Monte Carlo endpoint above."""
+    project = _get_project_or_404(db, principal.organization_id, project_id)
+    tasks = list_tasks_for_project(db, principal.organization_id, project_id)
+    dependencies = list_dependencies_for_project(db, principal.organization_id, project_id)
+    resources = list_resources(db, principal.organization_id)
+    resource_states = compute_all_resource_states(db, principal.organization_id)
+    workloads = {rid: workload for rid, (workload, _state) in resource_states.items()}
+
+    bottlenecks = detect_bottlenecks(tasks, dependencies, resources, workloads)
+    return [
+        BottleneckOut(
+            task_id=b.task_id,
+            task_title=b.task_title,
+            root_cause=b.root_cause,
+            slippage_days=b.slippage_days,
+            downstream_task_ids=b.downstream_task_ids,
+            downstream_task_titles=b.downstream_task_titles,
+            suggested_action=b.suggested_action,
+            suggested_candidate=(
+                BottleneckCandidateOut(
+                    resource_id=UUID(b.suggested_candidate.resource_id),
+                    resource_name=b.suggested_candidate.resource_name,
+                    skill_match_pct=b.suggested_candidate.skill_match_pct,
+                    availability_pct=b.suggested_candidate.availability_pct,
+                    cost_score=b.suggested_candidate.cost_score,
+                    overall=b.suggested_candidate.overall,
+                    explanation=b.suggested_candidate.explanation,
+                )
+                if b.suggested_candidate
+                else None
+            ),
+        )
+        for b in bottlenecks
+    ]
 
 
 @router.get("/{project_id}/ai-insights", response_model=AIResponse)

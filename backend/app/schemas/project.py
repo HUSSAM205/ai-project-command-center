@@ -102,3 +102,24 @@ class MonteCarloForecastOut(BaseModel):
     historical_sample_size: int
     method: str
     runs: int
+
+
+class BottleneckCandidateOut(BaseModel):
+    resource_id: UUID
+    resource_name: str
+    skill_match_pct: float
+    availability_pct: float
+    cost_score: float
+    overall: float
+    explanation: str
+
+
+class BottleneckOut(BaseModel):
+    task_id: UUID
+    task_title: str
+    root_cause: str
+    slippage_days: int
+    downstream_task_ids: list[UUID]
+    downstream_task_titles: list[str]
+    suggested_action: str
+    suggested_candidate: BottleneckCandidateOut | None = None
