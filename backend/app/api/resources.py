@@ -10,7 +10,9 @@ from app.models.enums import UtilizationState
 from app.models.resource import Resource, ResourceAllocation
 from app.repositories.projects import get_project
 from app.repositories.resources import get_resource, list_allocations_for_project, list_resources
+from app.repositories.tasks import list_all_tasks_for_org
 from app.schemas.resource import (
+    BalanceSuggestionOut,
     ResourceAllocationCreate,
     ResourceAllocationOut,
     ResourceCreate,
@@ -20,6 +22,7 @@ from app.schemas.resource import (
 )
 from app.services.common import compute_resource_workload, compute_utilization_state
 from app.services.resource_state import compute_all_resource_states, compute_resource_project_matrix
+from app.services.workload_balancer import suggest_portfolio_balance
 
 router = APIRouter(prefix="/api/v1", tags=["resources"])
 
@@ -30,8 +33,59 @@ def list_all_resources(
 ) -> list[ResourceOut]:
     resources = list_resources(db, principal.organization_id)
     states = compute_all_resource_states(db, principal.organization_id)
+
+    # One org-wide task fetch, grouped by assignee -- not a per-resource query -- for the real
+    # financial-burn figures (logged_hours/planned_hours -> cost_burn/planned_cost in
+    # serialize_resource): actual_hours actually logged vs. estimated_hours planned, across every
+    # task assigned to each resource.
+    all_tasks = list_all_tasks_for_org(db, principal.organization_id)
+    logged_by_resource: dict[UUID, float] = {}
+    planned_by_resource: dict[UUID, float] = {}
+    for t in all_tasks:
+        if t.assignee_id is None:
+            continue
+        logged_by_resource[t.assignee_id] = logged_by_resource.get(t.assignee_id, 0.0) + float(t.actual_hours or 0)
+        planned_by_resource[t.assignee_id] = planned_by_resource.get(t.assignee_id, 0.0) + float(t.estimated_hours or 0)
+
     return [
-        serialize_resource(r, *states.get(r.id, (0.0, UtilizationState.UNDERUTILIZED))) for r in resources
+        serialize_resource(
+            r,
+            *states.get(r.id, (0.0, UtilizationState.UNDERUTILIZED)),
+            logged_hours=logged_by_resource.get(r.id, 0.0),
+            planned_hours=planned_by_resource.get(r.id, 0.0),
+        )
+        for r in resources
+    ]
+
+
+@router.post("/resources/balance-suggestions", response_model=list[BalanceSuggestionOut])
+def get_balance_suggestions(
+    principal: CurrentPrincipal = Depends(get_current_principal), db: Session = Depends(get_db)
+) -> list[BalanceSuggestionOut]:
+    """Portfolio-wide AI Workload Balancer (app/services/workload_balancer.py) -- one real,
+    actionable reassignment suggestion per currently-overloaded resource, each reusing the exact
+    same explainable candidate ranking the Resources page's "Suggest Assignees"/"Suggest
+    Rebalance" cards already use, filtered to genuinely qualified (real skill overlap) candidates
+    who would land at or under 75% utilization after taking the task. A read, not a mutation --
+    applying a suggestion is a separate, real PATCH /tasks/{id} call the frontend makes itself."""
+    resources = list_resources(db, principal.organization_id)
+    all_tasks = list_all_tasks_for_org(db, principal.organization_id)
+    resource_states = compute_all_resource_states(db, principal.organization_id)
+    suggestions = suggest_portfolio_balance(resources, all_tasks, resource_states)
+    return [
+        BalanceSuggestionOut(
+            task_id=s.task_id,
+            task_title=s.task_title,
+            from_resource_id=s.from_resource_id,
+            from_resource_name=s.from_resource_name,
+            from_utilization_pct=s.from_utilization_pct,
+            to_resource_id=s.to_resource_id,
+            to_resource_name=s.to_resource_name,
+            to_utilization_pct_before=s.to_utilization_pct_before,
+            to_utilization_pct_after=s.to_utilization_pct_after,
+            explanation=s.explanation,
+        )
+        for s in suggestions
     ]
 
 

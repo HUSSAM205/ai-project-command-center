@@ -39,6 +39,15 @@ class ResourceOut(BaseModel):
     capacity_hours_per_week: MoneyField
     current_workload_hours_per_week: float
     utilization_state: UtilizationState
+    # Real financial burn: logged_hours/planned_hours are sums of Task.actual_hours/estimated_hours
+    # across every task assigned to this resource (see app/api/resources.py's list_all_resources).
+    # cost_burn/planned_cost = those hours * this resource's own hourly_cost -- a real per-person
+    # labor-cost variance signal, not a fabricated one. Defaults to 0 for a just-created/updated
+    # resource (create_resource/update_resource below don't have task history to compute from yet).
+    logged_hours: float = 0.0
+    planned_hours: float = 0.0
+    cost_burn: MoneyField = Decimal("0")
+    planned_cost: MoneyField = Decimal("0")
 
 
 class ResourceAllocationCreate(BaseModel):
@@ -74,3 +83,16 @@ class ResourceMatrixRowOut(BaseModel):
     workload_hours: float
     capacity_hours: float
     allocations: list[ResourceMatrixCellOut]
+
+
+class BalanceSuggestionOut(BaseModel):
+    task_id: UUID
+    task_title: str
+    from_resource_id: UUID
+    from_resource_name: str
+    from_utilization_pct: float
+    to_resource_id: UUID
+    to_resource_name: str
+    to_utilization_pct_before: float
+    to_utilization_pct_after: float
+    explanation: str

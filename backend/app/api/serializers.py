@@ -43,8 +43,13 @@ def serialize_risk(risk: Risk) -> RiskOut:
 
 
 def serialize_resource(
-    resource: Resource, workload: float, state: UtilizationState
+    resource: Resource,
+    workload: float,
+    state: UtilizationState,
+    logged_hours: float = 0.0,
+    planned_hours: float = 0.0,
 ) -> ResourceOut:
+    hourly_cost = float(resource.hourly_cost or 0)
     return ResourceOut(
         id=resource.id,
         organization_id=resource.organization_id,
@@ -56,6 +61,10 @@ def serialize_resource(
         capacity_hours_per_week=resource.capacity_hours_per_week,
         current_workload_hours_per_week=round(workload, 2),
         utilization_state=state,
+        logged_hours=round(logged_hours, 2),
+        planned_hours=round(planned_hours, 2),
+        cost_burn=round(logged_hours * hourly_cost, 2),
+        planned_cost=round(planned_hours * hourly_cost, 2),
     )
 
 
