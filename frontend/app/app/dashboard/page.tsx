@@ -34,7 +34,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
 import { PulseDot } from "@/components/ui/PulseDot";
-import { Badge, riskLevelTone, projectStatusTone, utilizationTone, AISourceBadge, QuickSummaryBadge, SOLID_COLORS } from "@/components/ui/Badge";
+import { Badge, riskLevelTone, ragStatusTone, projectStatusTone, utilizationTone, AISourceBadge, QuickSummaryBadge, SOLID_COLORS } from "@/components/ui/Badge";
 import { RiskRadar } from "@/components/viz/RiskRadar";
 import { buildLocalExecutiveBrief } from "@/lib/localExecutiveBrief";
 import { cn, formatCompactCurrency, formatDate, formatPercent } from "@/lib/utils";
@@ -88,6 +88,10 @@ const STATUS_COLORS: Record<ProjectStatus, string> = {
 export default function DashboardPage() {
   const { t } = useLanguage();
   const dashboard = useDashboardStream();
+  // Default OFF: this is a live executive cockpit first, and the 3D constellation/risk-ring
+  // views are a deliberate secondary "deep analysis" mode, never the primary landing surface —
+  // see the Portfolio Constellation card's comment below for the full reasoning.
+  const [spatialView, setSpatialView] = useState(false);
   const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
   const resources = useApi(() => withOfflineFallback(() => api.resources(), buildOfflineResources), []);
   const brief = useApi(() => api.executiveBrief(), []);
@@ -190,6 +194,20 @@ export default function DashboardPage() {
         </div>
         <div className="mt-1 flex items-center gap-3">
           {dashboardOffline && <OfflinePreviewBanner onRetry={dashboard.reload} subject="portfolio data" inline />}
+          <button
+            type="button"
+            onClick={() => setSpatialView((v) => !v)}
+            aria-pressed={spatialView}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              spatialView
+                ? "border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-300"
+                : "border-border-default bg-subtle text-text-tertiary hover:text-text-primary",
+            )}
+          >
+            <Orbit className="h-3.5 w-3.5" aria-hidden="true" />
+            Spatial View
+          </button>
           <LiveIndicator status={dashboard.status} />
         </div>
       </div>
@@ -247,13 +265,16 @@ export default function DashboardPage() {
         </CardContent>
       </MotionCard>
 
-      {/* Portfolio constellation — same projects/risks data as the rest of this page, just a 3D
-          lens on it. Node height = real health_score, node size = real budget, node color = the
-          same risk_level mapping the Badge uses everywhere else. Edges connect projects sharing
-          an open risk category — the only real cross-project relationship this app's data model
-          has (task dependencies only link tasks within one project); deliberately not labeled
-          "blockers" or "dependencies" since that data doesn't exist here. */}
-      {projectsList.length > 0 && (
+      {/* Portfolio constellation — a secondary "Spatial View" lens on the same projects/risks
+          data as the rest of this page, OFF by default. This is a live executive cockpit first:
+          the default landing view is the 2D KPI/table/chart layer below, and the 3D scene is an
+          opt-in deep-analysis tool, never the primary surface. Node height = real health_score,
+          node size = real budget, node color = the same risk_level mapping the Badge uses
+          everywhere else. Edges connect projects sharing an open risk category — the only real
+          cross-project relationship this app's data model has (task dependencies only link tasks
+          within one project); deliberately not labeled "blockers" or "dependencies" since that
+          data doesn't exist here. */}
+      {spatialView && projectsList.length > 0 && (
         <MotionCard>
           <CardHeader>
             <div>
@@ -341,7 +362,9 @@ export default function DashboardPage() {
                         </Link>
                         <p className="text-xs text-text-tertiary">{p.client ?? "Internal"}</p>
                       </div>
-                      <Badge tone={riskLevelTone(p.risk_level)}>{p.risk_level}</Badge>
+                      <Badge tone={ragStatusTone(p.rag_status)} dot>
+                        {p.rag_status.replace("_", " ")}
+                      </Badge>
                     </motion.li>
                   ))}
                 </motion.ul>
@@ -368,8 +391,31 @@ export default function DashboardPage() {
             />
             {riskEntries.length === 0 ? (
               <EmptyState title="No risks recorded" />
-            ) : (
+            ) : spatialView ? (
               <RiskHealthRings3D entries={riskEntries} />
+            ) : (
+              <div className="h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={riskEntries.map(([k, v]) => ({ name: k, value: v }))}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={38}
+                      outerRadius={58}
+                      paddingAngle={3}
+                      cornerRadius={6}
+                      stroke="var(--bg-surface)"
+                      strokeWidth={2}
+                    >
+                      {riskEntries.map(([k]) => (
+                        <Cell key={k} fill={SEVERITY_COLORS[k] ?? "var(--neutral-400)"} />
+                      ))}
+                    </Pie>
+                    <RTooltip contentStyle={tooltipStyle} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             )}
             <ul className="mt-2 space-y-1.5">
               {riskEntries.map(([k, v]) => (

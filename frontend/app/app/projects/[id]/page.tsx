@@ -1163,8 +1163,8 @@ const MC_HOURS_PER_DAY = 8; // disclosed simplification — calendar days, weeke
 interface MonteCarloResult {
   totalsHours: number[]; // sorted ascending, one per iteration
   p50Hours: number;
-  p80Hours: number;
-  p90Hours: number;
+  p85Hours: number;
+  p95Hours: number;
   histogram: { bucketStartDays: number; count: number }[];
   taskCount: number;
   dependencyEdgeCount: number;
@@ -1239,8 +1239,8 @@ function runMonteCarloSimulation(tasks: Task[]): MonteCarloResult {
   totals.sort((a, b) => a - b);
 
   const p50Hours = percentile(totals, 0.5);
-  const p80Hours = percentile(totals, 0.8);
-  const p90Hours = percentile(totals, 0.9);
+  const p85Hours = percentile(totals, 0.85);
+  const p95Hours = percentile(totals, 0.95);
 
   const maxTotal = totals[totals.length - 1] ?? 0;
   const bucketCount = 20;
@@ -1257,8 +1257,8 @@ function runMonteCarloSimulation(tasks: Task[]): MonteCarloResult {
   return {
     totalsHours: totals,
     p50Hours,
-    p80Hours,
-    p90Hours,
+    p85Hours,
+    p95Hours,
     histogram: buckets,
     taskCount: relevant.length,
     dependencyEdgeCount,
@@ -1357,8 +1357,8 @@ function MonteCarloCard({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               {[
                 { label: "P50", hours: result.p50Hours, hint: "50% of simulated runs finish by here" },
-                { label: "P80", hours: result.p80Hours, hint: "80% of simulated runs finish by here" },
-                { label: "P90", hours: result.p90Hours, hint: "90% of simulated runs finish by here" },
+                { label: "P85", hours: result.p85Hours, hint: "85% of simulated runs finish by here" },
+                { label: "P95", hours: result.p95Hours, hint: "95% of simulated runs finish by here" },
               ].map((s) => (
                 <div key={s.label} className="rounded-md border border-border-default bg-subtle/40 p-3.5">
                   <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{s.label} Completion</p>
@@ -1391,7 +1391,7 @@ function MonteCarloCard({
                   />
                   <Bar dataKey="count" fill="var(--brand-500)" radius={[3, 3, 0, 0]} />
                   <ReferenceLine x={Math.round(result.p50Hours / MC_HOURS_PER_DAY)} stroke="var(--info-solid)" strokeDasharray="4 3" label={{ value: "P50", fontSize: 10, fill: "var(--info-solid)" }} />
-                  <ReferenceLine x={Math.round(result.p90Hours / MC_HOURS_PER_DAY)} stroke="var(--critical-solid)" strokeDasharray="4 3" label={{ value: "P90", fontSize: 10, fill: "var(--critical-solid)" }} />
+                  <ReferenceLine x={Math.round(result.p95Hours / MC_HOURS_PER_DAY)} stroke="var(--critical-solid)" strokeDasharray="4 3" label={{ value: "P95", fontSize: 10, fill: "var(--critical-solid)" }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>

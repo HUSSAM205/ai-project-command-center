@@ -106,6 +106,25 @@ export function projectStatusTone(status: string): SemanticTone {
   }
 }
 
+// Canonical RAG status (backend/app/services/rag_status.py) -- the one status vocabulary this
+// app renders everywhere a project's overall standing is shown, so "critical" always means the
+// same real, computed thing regardless of which page it's on. Strict semantic discipline: this
+// tone mapping is the ONLY place red (critical) is used for a project's status.
+export function ragStatusTone(status: string): SemanticTone {
+  switch (status) {
+    case "ON_TRACK":
+      return "success";
+    case "AT_RISK":
+      return "warning";
+    case "CRITICAL":
+      return "critical";
+    case "COMPLETED":
+      return "info";
+    default:
+      return "neutral";
+  }
+}
+
 export function taskStatusTone(status: string): SemanticTone {
   switch (status) {
     case "TODO":

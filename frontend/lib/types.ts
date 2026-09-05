@@ -14,6 +14,12 @@ export type Priority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
+// Canonical 4-value executive status (backend/app/services/rag_status.py) -- computed from a
+// project's real status/health_score/risk_level, never a separate stored field. The one status
+// vocabulary every view of a project should render from, so "at risk" means the same thing on
+// the dashboard tile as it does in a PMO table row.
+export type RagStatus = "ON_TRACK" | "AT_RISK" | "CRITICAL" | "COMPLETED";
+
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "REVIEW" | "DONE";
 
 export type MilestoneStatus = "PENDING" | "AT_RISK" | "COMPLETED";
@@ -84,6 +90,7 @@ export interface Project {
   progress: number;
   health_score: number;
   risk_level: RiskLevel;
+  rag_status: RagStatus;
   created_at: string;
   updated_at: string;
 }
@@ -155,6 +162,26 @@ export interface ResourceAllocation {
   project_name?: string;
 }
 
+// backend/app/services/resource_state.py's compute_resource_project_matrix -- real cross-project
+// allocation grid; is_single_point_of_failure is true only when this resource is the ONLY person
+// currently allocated to that project.
+export interface ResourceMatrixCell {
+  project_id: string;
+  project_name: string;
+  allocation_percent: number;
+  is_single_point_of_failure: boolean;
+}
+
+export interface ResourceMatrixRow {
+  resource_id: string;
+  resource_name: string;
+  role: string | null;
+  utilization_state: UtilizationState;
+  workload_hours: number;
+  capacity_hours: number;
+  allocations: ResourceMatrixCell[];
+}
+
 export interface Risk {
   id: string;
   project_id: string;
@@ -202,6 +229,21 @@ export interface CostForecast {
   variance: number;
   variance_percent: number;
   overrun_probability: number;
+}
+
+// backend/app/services/monte_carlo.py -- 1,000-run bootstrap simulation over this org's own
+// historical task estimate accuracy, not a canned/fabricated distribution.
+export interface MonteCarloForecast {
+  project_id: string;
+  p50_date: string;
+  p85_date: string;
+  p95_date: string;
+  remaining_task_count: number;
+  remaining_hours_estimate: number;
+  weekly_capacity_hours: number;
+  historical_sample_size: number;
+  method: string;
+  runs: number;
 }
 
 export interface AssigneeCandidate {

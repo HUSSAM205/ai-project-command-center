@@ -20,7 +20,9 @@ import type {
   FeedbackPage,
   HealthBreakdown,
   Milestone,
+  MonteCarloForecast,
   Project,
+  ResourceMatrixRow,
   Report,
   ReportType,
   Resource,
@@ -214,6 +216,7 @@ export const api = {
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: "DELETE" }),
   projectHealth: (id: string) => request<HealthBreakdown>(`/projects/${id}/health`),
   projectForecast: (id: string) => request<CostForecast>(`/projects/${id}/forecast`),
+  projectMonteCarloForecast: (id: string) => request<MonteCarloForecast>(`/projects/${id}/forecast/monte-carlo`),
 
   // Tasks
   tasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
@@ -252,6 +255,7 @@ export const api = {
 
   // Resources
   resources: () => request<Resource[]>("/resources"),
+  resourceMatrix: () => request<ResourceMatrixRow[]>("/resources/matrix"),
   createResource: (payload: Partial<Resource>) => request<Resource>("/resources", { method: "POST", body: payload }),
   updateResource: (id: string, payload: Partial<Resource>) =>
     request<Resource>(`/resources/${id}`, { method: "PATCH", body: payload }),

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { makePreviewId, simulateLatency } from "@/lib/demoSandbox";
+import { computeRagStatus } from "@/lib/ragStatus";
 import type { Priority, Project, ProjectStatus } from "@/lib/types";
 import { titleCase } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
@@ -90,6 +91,7 @@ export function ProjectFormModal({
           progress: 0,
           health_score: 100,
           risk_level: "LOW",
+          rag_status: computeRagStatus(payload.status, 100, "LOW"),
           created_at: now,
           updated_at: now,
         };

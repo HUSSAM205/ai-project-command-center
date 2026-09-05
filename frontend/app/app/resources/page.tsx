@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Repeat, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, Repeat, ShieldAlert, Sparkles } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { AssigneeCandidate } from "@/lib/types";
@@ -14,7 +14,7 @@ import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import type { Resource, Task } from "@/lib/types";
+import type { Resource, ResourceMatrixRow, Task } from "@/lib/types";
 import { buildOfflineResources, buildOfflineTasks, withOfflineFallback } from "@/lib/offlinePreview";
 
 const EMPTY_RESOURCES: Resource[] = [];
@@ -43,6 +43,10 @@ function utilizationRatioPct(r: Resource): number {
 export default function ResourcesPage() {
   const resourcesApi = useApi(() => withOfflineFallback(() => api.resources(), buildOfflineResources), []);
   const tasksApi = useApi(() => withOfflineFallback(() => api.allTasks(), buildOfflineTasks), []);
+  // Real backend endpoint (GET /resources/matrix) -- no offline fallback dataset for this one
+  // (it's a secondary/deep-analysis view, not core to the page), so a failure here just shows
+  // its own error state rather than degrading the whole page.
+  const matrixApi = useApi(() => api.resourceMatrix(), []);
 
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [candidates, setCandidates] = useState<AssigneeCandidate[] | null>(null);
@@ -154,6 +158,13 @@ export default function ResourcesPage() {
       </div>
 
       <UtilizationHeatmap resources={resources} loading={resourcesApi.loading} error={resourcesApi.error} offline={offline} onRetry={resourcesApi.reload} />
+
+      <ResourceMatrixCard
+        rows={matrixApi.data ?? []}
+        loading={matrixApi.loading}
+        error={matrixApi.error}
+        onRetry={matrixApi.reload}
+      />
 
       <RebalanceCard resources={resources} tasks={tasks} overAllocated={overAllocated} offline={offline} onChanged={() => { resourcesApi.reload(); tasksApi.reload(); }} />
 
@@ -303,6 +314,98 @@ function cnHeatmapCell(tone: SemanticTone, overThreshold: boolean): string {
   const toneClass = HEATMAP_TONE_CLASSES[tone];
   const ring = overThreshold ? "ring-1 ring-critical-solid" : "";
   return [base, toneClass, ring].filter(Boolean).join(" ");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cross-Project Allocation Matrix: real GET /resources/matrix data (backend/app/services/
+// resource_state.py's compute_resource_project_matrix) -- every resource's real allocations
+// across every project they're on, with single-point-of-failure flagged when they're the ONLY
+// person currently staffed on that project (computed from real resource_allocations, not a
+// heuristic guess).
+// ---------------------------------------------------------------------------------------------
+
+function ResourceMatrixCard({
+  rows,
+  loading,
+  error,
+  onRetry,
+}: {
+  rows: ResourceMatrixRow[];
+  loading: boolean;
+  error: Error | null;
+  onRetry: () => void;
+}) {
+  const staffedRows = useMemo(() => rows.filter((r) => r.allocations.length > 0), [rows]);
+  const spofCount = useMemo(
+    () => staffedRows.reduce((sum, r) => sum + r.allocations.filter((a) => a.is_single_point_of_failure).length, 0),
+    [staffedRows],
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="flex items-center gap-1.5">
+            <ShieldAlert className="h-4 w-4 text-text-tertiary" aria-hidden="true" />
+            Cross-Project Allocation Matrix
+          </CardTitle>
+          <CardDescription>
+            Every resource&apos;s real project allocations. A project highlighted in red means this person is
+            currently the <em>only</em> staff allocated to it — a genuine single point of failure, not a heuristic.
+          </CardDescription>
+        </div>
+        {spofCount > 0 && (
+          <Badge tone="critical" dot>
+            {spofCount} single point{spofCount === 1 ? "" : "s"} of failure
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <ErrorState description={error.message} onRetry={onRetry} />
+        ) : loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-14 animate-pulse rounded-md border border-border-default bg-subtle" />
+            ))}
+          </div>
+        ) : staffedRows.length === 0 ? (
+          <EmptyState title="No active allocations" description="No resource is currently allocated to a project." />
+        ) : (
+          <ul className="divide-y divide-border-default">
+            {staffedRows.map((r) => (
+              <li key={r.resource_id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="w-48 shrink-0">
+                  <p className="truncate text-sm font-medium text-text-primary">{r.resource_name}</p>
+                  <p className="truncate text-xs text-text-tertiary">{r.role ?? "—"}</p>
+                </div>
+                <div className="flex flex-1 flex-wrap gap-1.5">
+                  {r.allocations.map((a) => (
+                    <span
+                      key={a.project_id}
+                      title={a.is_single_point_of_failure ? `${r.resource_name} is the only staff on ${a.project_name}` : undefined}
+                      className={
+                        a.is_single_point_of_failure
+                          ? "inline-flex items-center gap-1 rounded-full border border-critical-border bg-critical-bg px-2 py-0.5 text-xs font-medium text-critical-fg"
+                          : "inline-flex items-center gap-1 rounded-full border border-border-default bg-subtle px-2 py-0.5 text-xs font-medium text-text-secondary"
+                      }
+                    >
+                      {a.is_single_point_of_failure && <ShieldAlert className="h-3 w-3" aria-hidden="true" />}
+                      {a.project_name}
+                      <span className="font-tabular text-text-tertiary">{a.allocation_percent}%</span>
+                    </span>
+                  ))}
+                </div>
+                <span className="font-tabular text-xs text-text-tertiary">
+                  {r.workload_hours}h / {r.capacity_hours}h
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------------------------

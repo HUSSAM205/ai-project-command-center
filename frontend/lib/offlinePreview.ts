@@ -3,13 +3,17 @@ import type {
   ContractLedger,
   CostForecast,
   EVM,
+  Priority,
   Project,
+  ProjectStatus,
   RaciEntry,
   Resource,
   Risk,
+  RiskLevel,
   StageGate,
   Task,
 } from "./types";
+import { computeRagStatus } from "./ragStatus";
 
 /**
  * Honest, clearly-labeled fallback data for the PMO and Consulting workspaces.
@@ -50,24 +54,28 @@ export function withTimeout<T>(promise: Promise<T>, ms: number = OVERALL_TIMEOUT
 const now = new Date().toISOString();
 
 function fallbackProject(overrides: Partial<Project> & Pick<Project, "id" | "name">): Project {
-  return {
+  const base = {
     organization_id: "offline-preview",
     description: null,
     client: null,
     manager_id: null,
     manager_name: "—",
-    status: "ACTIVE",
-    priority: "HIGH",
+    status: "ACTIVE" as ProjectStatus,
+    priority: "HIGH" as Priority,
     start_date: now,
     end_date: now,
     budget: 0,
     actual_cost: 0,
     progress: 0,
     health_score: 0,
-    risk_level: "MEDIUM",
+    risk_level: "MEDIUM" as RiskLevel,
     created_at: now,
     updated_at: now,
     ...overrides,
+  };
+  return {
+    ...base,
+    rag_status: overrides.rag_status ?? computeRagStatus(base.status, base.health_score, base.risk_level),
   };
 }
 

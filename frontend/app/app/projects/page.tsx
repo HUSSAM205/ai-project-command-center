@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 import type { Project } from "@/lib/types";
-import { Badge, priorityTone, projectStatusTone, riskLevelTone } from "@/components/ui/Badge";
+import { Badge, priorityTone, projectStatusTone, ragStatusTone, riskLevelTone } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -80,6 +80,16 @@ export default function ProjectsPage() {
       ),
     },
     { key: "status", header: "Status", sortValue: (p) => p.status, render: (p) => <Badge tone={projectStatusTone(p.status)}>{titleCase(p.status)}</Badge> },
+    {
+      key: "rag",
+      header: "RAG",
+      sortValue: (p) => p.rag_status,
+      render: (p) => (
+        <Badge tone={ragStatusTone(p.rag_status)} dot>
+          {p.rag_status.replace("_", " ")}
+        </Badge>
+      ),
+    },
     { key: "priority", header: "Priority", sortValue: (p) => p.priority, render: (p) => <Badge tone={priorityTone(p.priority)}>{titleCase(p.priority)}</Badge> },
     {
       key: "health",
