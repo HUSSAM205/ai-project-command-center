@@ -166,14 +166,15 @@ async def upload_document(
 
     if len(data) <= INLINE_PROCESSING_MAX_BYTES:
         # Runs the exact same pipeline as the background path, just synchronously before the
-        # response is sent (see INLINE_PROCESSING_MAX_BYTES above). to_thread keeps this off the
-        # event loop like every other blocking call in this handler -- it only blocks this one
-        # request's coroutine, not other concurrent requests. db.refresh below picks up the
-        # status/error_message process_document just committed through its own separate session
-        # (process_document always opens its own SessionLocal -- see its docstring) so the
-        # response reflects the real final state instead of the PENDING row created above.
-        await asyncio.to_thread(process_document, document.id, document.filename, document.storage_path)
-        await asyncio.to_thread(db.refresh, document)
+        # response is sent (see INLINE_PROCESSING_MAX_BYTES above), reusing this request's own
+        # `db` session instead of opening a second pooled connection to Neon -- this call is on
+        # the hot path the client is synchronously waiting on, so an avoidable extra connection
+        # round trip matters here in a way it doesn't for the background path below. Passing `db`
+        # also means `document`'s attributes refresh via the same session's identity map once
+        # process_document commits, so no separate refresh call is needed. to_thread keeps this
+        # off the event loop like every other blocking call in this handler -- it only blocks
+        # this one request's coroutine, not other concurrent requests.
+        await asyncio.to_thread(process_document, document.id, document.filename, document.storage_path, db)
     else:
         background_tasks.add_task(process_document, document.id, document.filename, document.storage_path)
 

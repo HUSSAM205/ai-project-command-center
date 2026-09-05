@@ -1,13 +1,18 @@
-"""Background processing pipeline for an uploaded document: parse -> chunk -> embed -> store.
+"""Document processing pipeline: parse -> chunk -> embed -> store.
 
-Runs as a FastAPI BackgroundTask *after* the upload response has already been sent (the
-document starts life as PENDING so the frontend can show that status immediately), so it
-opens its own DB session rather than reusing the request-scoped one, which is closed by the
-time this runs.
+Two callers, two session lifetimes: a background-task caller (a document over
+INLINE_PROCESSING_MAX_BYTES -- see app/api/documents.py) runs this *after* the upload response
+has already been sent, so it must open its own DB session since the request-scoped one is closed
+by the time this runs. An inline caller (a document at or under that size) already holds a live,
+request-scoped session and passes it in via `db` -- reusing it instead of opening a second pooled
+connection to Neon avoids a second connection round trip on the hot path, which matters when the
+caller is synchronously waiting on this to finish before it can respond.
 """
 
 import logging
 from uuid import UUID
+
+from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.enums import DocumentStatus
@@ -20,8 +25,10 @@ from app.services.embeddings import embed_texts
 logger = logging.getLogger(__name__)
 
 
-def process_document(document_id: UUID, filename: str, storage_path: str) -> None:
-    db = SessionLocal()
+def process_document(document_id: UUID, filename: str, storage_path: str, db: Session | None = None) -> None:
+    owns_session = db is None
+    if db is None:
+        db = SessionLocal()
     try:
         set_document_status(db, document_id, DocumentStatus.PROCESSING)
         try:
@@ -66,4 +73,5 @@ def process_document(document_id: UUID, filename: str, storage_path: str) -> Non
             logger.exception("document processing failed for %s", document_id)
             set_document_status(db, document_id, DocumentStatus.FAILED, f"processing failed: {exc}"[:2000])
     finally:
-        db.close()
+        if owns_session:
+            db.close()
