@@ -80,7 +80,12 @@ def _split_lines(transcript: str) -> list[str]:
     """Meeting transcripts are usually one thought per line ("Speaker: sentence."), unlike a
     prose document -- so lines are the primary unit, further split into sentences only when a
     single line clearly bundles more than one ("Sarah: We approved the budget. Also, the launch
-    date may slip.")."""
+    date may slip."). Deliberately NOT sentence-split here: an action item is very often written
+    as "Action item: <task>. Owner: <name>. Due: <date>. Priority: <level>." across several
+    sentences within one turn -- splitting on periods would scatter that metadata across separate,
+    keyword-less fragments and silently lose it. extract_meeting_intelligence below sentence-splits
+    only the lines that turn out NOT to be an action item, where each sentence is checked
+    independently for a decision/risk mention."""
     lines: list[str] = []
     for raw_line in transcript.splitlines():
         line = raw_line.strip()
@@ -89,9 +94,13 @@ def _split_lines(transcript: str) -> list[str]:
         # Strip a leading "Speaker Name:" turn marker so keyword/owner matching runs on the
         # actual utterance, not the speaker label.
         line = re.sub(r"^[A-Z][\w .'\-]{0,40}:\s*", "", line)
-        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", line) if s.strip()]
-        lines.extend(sentences or [line])
+        if line:
+            lines.append(line)
     return lines
+
+
+def _split_sentences(line: str) -> list[str]:
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", line) if s.strip()]
 
 
 def _dedupe(items: list[str], limit: int = _MAX_ITEMS_PER_CATEGORY) -> list[str]:
@@ -223,17 +232,17 @@ def _classify_risk_category(sentence: str) -> RiskCategory:
 
 _TITLE_STRIP_PATTERNS = [
     re.compile(r"^(action item|action|to-?do)\s*:?\s*", re.IGNORECASE),
-    re.compile(r",?\s*\b(?:owner|assigned to|assignee)\s*:?\s*[A-Za-z][a-zA-Z'\-]+(?:\s[A-Za-z][a-zA-Z'\-]+)?", re.IGNORECASE),
-    re.compile(r",?\s*\bdue\s*:?\s*[^,.\n]+", re.IGNORECASE),
+    re.compile(r"[,.]?\s*\b(?:owner|assigned to|assignee)\s*:?\s*[A-Za-z][a-zA-Z'\-]+(?:\s[A-Za-z][a-zA-Z'\-]+)?\.?", re.IGNORECASE),
+    re.compile(r"[,.]?\s*\bdue\s*:?\s*[^,.\n]+\.?", re.IGNORECASE),
     re.compile(
-        r",?\s*\bby\s+(?:next\s+)?(?:today|tomorrow|end of (?:day|week|month)|"
+        r"[,.]?\s*\bby\s+(?:next\s+)?(?:today|tomorrow|end of (?:day|week|month)|"
         r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
-        r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|[a-z]+\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)\b",
+        r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|[a-z]+\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)\b\.?",
         re.IGNORECASE,
     ),
-    re.compile(r",?\s*\b(?:high|low|critical|urgent)\s+priority\b", re.IGNORECASE),
-    re.compile(r",?\s*\bpriority\s*:?\s*(?:low|medium|high|critical)\b", re.IGNORECASE),
-    re.compile(r",?\s*(?:(?:this should take|roughly|about|approximately)\s*)*~?\d+(?:\.\d+)?\s*(?:hours?|hrs?|days?)\b", re.IGNORECASE),
+    re.compile(r"[,.]?\s*\b(?:high|low|critical|urgent)\s+priority\b\.?", re.IGNORECASE),
+    re.compile(r"[,.]?\s*\bpriority\s*:?\s*(?:low|medium|high|critical)\b\.?", re.IGNORECASE),
+    re.compile(r"[,.]?\s*(?:(?:this should take|roughly|about|approximately)\s*)*~?\d+(?:\.\d+)?\s*(?:hours?|hrs?|days?)\b\.?", re.IGNORECASE),
 ]
 
 
@@ -260,32 +269,34 @@ def extract_meeting_intelligence(transcript: str, today: date | None = None) -> 
     action_items: list[dict] = []
     risks: list[dict] = []
 
-    for sentence in lines:
-        lowered = sentence.lower()
-        is_action = any(kw in lowered for kw in _ACTION_KEYWORDS)
-        is_decision = not is_action and any(kw in lowered for kw in _DECISION_KEYWORDS)
-        # Mutually exclusive with is_action -- an "action item: ... risk register ..." sentence is
-        # a task, not a risk mention; without this, generic risk keywords ("risk", "issue") that
-        # merely appear inside an action item's own wording (e.g. "update the risk register")
-        # would double-classify it as a risk too.
-        is_risk = not is_action and any(kw in lowered for kw in _RISK_KEYWORDS)
-
-        if is_action:
+    for line in lines:
+        # Action detection runs on the WHOLE line (not sentence-split): "Action item: <task>.
+        # Owner: <name>. Due: <date>. Priority: <level>." is a common one-turn structure, and
+        # sentence-splitting it first would scatter that metadata into separate, keyword-less
+        # fragments that get silently dropped. Only lines that AREN'T an action item get
+        # sentence-split, so a turn like "We approved the budget. Also, the vendor risk could
+        # delay launch." still yields both a decision and a risk from its two sentences.
+        if any(kw in line.lower() for kw in _ACTION_KEYWORDS):
             action_items.append(
                 {
-                    "title": _clean_action_title(sentence),
-                    "owner_name": _detect_owner(sentence),
-                    "priority": _detect_priority(sentence).value,
-                    "due_date": (_detect_due_date(sentence, today) or None),
-                    "estimated_hours": _detect_effort_hours(sentence),
-                    "source_line": sentence,
+                    "title": _clean_action_title(line),
+                    "owner_name": _detect_owner(line),
+                    "priority": _detect_priority(line).value,
+                    "due_date": (_detect_due_date(line, today) or None),
+                    "estimated_hours": _detect_effort_hours(line),
+                    "source_line": line,
                 }
             )
-        elif is_decision:
-            decisions.append(sentence)
+            continue
 
-        if is_risk:
-            risks.append({"description": sentence, "category": _classify_risk_category(sentence).value})
+        for sentence in _split_sentences(line):
+            lowered = sentence.lower()
+            is_decision = any(kw in lowered for kw in _DECISION_KEYWORDS)
+            is_risk = any(kw in lowered for kw in _RISK_KEYWORDS)
+            if is_decision:
+                decisions.append(sentence)
+            if is_risk:
+                risks.append({"description": sentence, "category": _classify_risk_category(sentence).value})
 
     # Serialize dates to ISO strings for the JSON-shaped AIResponse.data contract (every other
     # AIResponse.data value in this app is JSON-primitive -- see document_extraction.py's dates).
