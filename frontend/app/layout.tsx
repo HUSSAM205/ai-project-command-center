@@ -5,6 +5,7 @@ import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "@/lib/auth";
 import { LanguageProvider } from "@/lib/i18n";
 import { ToastProvider } from "@/components/ui/Toast";
+import { BackendWarmer } from "@/components/BackendWarmer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,7 +37,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <MotionConfig reducedMotion="user">
             <LanguageProvider>
               <AuthProvider>
-                <ToastProvider>{children}</ToastProvider>
+                <ToastProvider>
+                  <BackendWarmer />
+                  {children}
+                </ToastProvider>
               </AuthProvider>
             </LanguageProvider>
           </MotionConfig>

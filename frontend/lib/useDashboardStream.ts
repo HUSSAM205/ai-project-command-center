@@ -6,18 +6,22 @@ import type { DashboardSummary } from "./types";
 
 export type StreamStatus = "connecting" | "live" | "reconnecting" | "offline";
 
-// Healthy polling stays snappy at 4s; a run of consecutive failures backs off instead of
-// hammering the single backend worker every 4s indefinitely (mirrors the same principle as the
-// PMO Workspace and Documents pages' backoff fixes -- a sustained outage should be polled less
-// often, not retried into faster). Resets to the front of this list the moment a tick succeeds.
-const POLL_BACKOFF_STEPS_MS = [4000, 8000, 16000, 30000];
-// A single dropped SSE ping (or one slow poll tick) can flip the raw status to "reconnecting" for
-// a moment before it self-corrects on the very next event/tick -- that's real, but showing it to a
-// visitor for under a second reads as flicker rather than signal. Hold the *displayed* status a
-// beat before reflecting a reconnecting/offline transition; a genuine sustained issue (e.g. the
-// free-tier backend's actual cold start) still shows honestly once it clears this bar. Immediate
-// on the way back to "live" -- recovery should never be hidden or delayed.
-const RECONNECT_DISPLAY_DELAY_MS = 3000;
+// First retries come back fast (1s/3s/7s) since a dropped tick is most often a momentary blip on
+// the free-tier host, not a real outage; a run of consecutive failures then backs off further
+// (16s/30s) instead of hammering the single backend worker indefinitely (mirrors the same
+// principle as the PMO Workspace and Documents pages' backoff fixes -- a sustained outage should
+// be polled less often, not retried into faster). Resets to the front of this list the moment a
+// tick succeeds.
+const POLL_BACKOFF_STEPS_MS = [1000, 3000, 7000, 16000, 30000];
+// A dropped SSE connection (or a run of failed poll ticks) can flip the raw status to
+// "reconnecting" for anywhere from a second to under a minute before it self-corrects -- on the
+// free-tier host that's routinely just a cold start finishing, not a real incident, and flashing a
+// warning badge for something that resolves itself within moments reads as noise, not signal. Hold
+// the *displayed* status for a full 45s before reflecting a reconnecting/offline transition; a
+// genuinely sustained issue still shows honestly once it clears this bar -- this delays the
+// warning, it never suppresses it outright. Immediate on the way back to "live" -- recovery should
+// never be hidden or delayed.
+const RECONNECT_DISPLAY_DELAY_MS = 45000;
 
 /**
  * Live-updating dashboard summary.
