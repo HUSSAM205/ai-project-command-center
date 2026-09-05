@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
@@ -17,8 +17,7 @@ import { HealthGauge } from "@/components/ui/StatusIndicator";
 import { ProjectFormModal } from "@/components/forms/ProjectFormModal";
 import { useToast } from "@/components/ui/Toast";
 import { formatCompactCurrency, formatDate, titleCase } from "@/lib/utils";
-import { buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
-import { isPreviewId } from "@/lib/demoSandbox";
+import { buildOfflineDashboard, buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
 
 const STATUS_OPTIONS = ["PLANNING", "ACTIVE", "ON_HOLD", "AT_RISK", "COMPLETED", "CANCELLED"];
 const PRIORITY_OPTIONS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
@@ -36,6 +35,7 @@ export default function ProjectsPage() {
   const router = useRouter();
   const { push } = useToast();
   const projects = useApi(() => withOfflineFallback(() => api.projects(), buildOfflineProjects), []);
+  const dashboardApi = useApi(() => withOfflineFallback(() => api.dashboard(), buildOfflineDashboard), []);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
@@ -46,9 +46,22 @@ export default function ProjectsPage() {
   const rows = localProjects ?? projects.data?.data ?? EMPTY_PROJECTS;
   const offline = projects.data?.offline ?? false;
 
-  function handleCreated(project: Project, simulated: boolean) {
+  function handleCreated(project: Project) {
     setLocalProjects([project, ...rows]);
-    push(simulated ? "Project created — sandbox only, not saved" : "Project created", "success");
+    push("Project created", "success");
+  }
+
+  async function handleDelete(project: Project) {
+    if (!window.confirm(`Delete "${project.name}"? This can't be undone.`)) return;
+    const prev = rows;
+    setLocalProjects(rows.filter((p) => p.id !== project.id));
+    try {
+      await api.deleteProject(project.id);
+      push("Project deleted", "success");
+    } catch (err) {
+      setLocalProjects(prev);
+      push(err instanceof Error ? err.message : "Could not delete the project", "error");
+    }
   }
 
   const filtered = useMemo(() => {
@@ -66,6 +79,17 @@ export default function ProjectsPage() {
       return true;
     });
   }, [rows, query, status, priority, health]);
+
+  // RAG distribution is computed from the same project rows already rendered below (real,
+  // client-visible data) -- capital/risk/utilization figures instead come from the dashboard
+  // summary since per-project rows here don't carry org-wide risk counts.
+  const ragCounts = useMemo(() => {
+    const counts: Record<string, number> = { ON_TRACK: 0, AT_RISK: 0, CRITICAL: 0, COMPLETED: 0 };
+    for (const p of rows) counts[p.rag_status] = (counts[p.rag_status] ?? 0) + 1;
+    return counts;
+  }, [rows]);
+  const dash = dashboardApi.data?.data;
+  const openRisks = dash ? Object.values(dash.risk_counts).reduce((a, b) => a + b, 0) : null;
 
   const columns: Column<Project>[] = [
     {
@@ -115,6 +139,25 @@ export default function ProjectsPage() {
       ),
     },
     { key: "end_date", header: "Due", align: "right", sortValue: (p) => p.end_date, render: (p) => <span className="font-tabular">{formatDate(p.end_date)}</span> },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      width: "48px",
+      render: (p) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Delete ${p.name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleDelete(p);
+          }}
+        >
+          <Trash2 className="h-4 w-4 text-text-tertiary" />
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -129,6 +172,34 @@ export default function ProjectsPage() {
           <Button size="sm" disabled={offline} title={offline ? "Reconnect to create a project" : undefined} onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> New Project
           </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 rounded-lg border border-border-default bg-surface p-4 sm:grid-cols-4">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Capital Deployed</p>
+          <p className="mt-1 font-tabular text-xl font-semibold text-text-primary">
+            {dash ? formatCompactCurrency(dash.total_budget) : "—"}
+          </p>
+          <p className="text-xs text-text-tertiary">{dash ? `${formatCompactCurrency(dash.total_actual_cost)} actual` : "loading…"}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Open Risks</p>
+          <p className="mt-1 font-tabular text-xl font-semibold text-text-primary">{openRisks ?? "—"}</p>
+          <p className="text-xs text-text-tertiary">{dash ? `${dash.risk_counts.CRITICAL} critical` : "loading…"}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Resource Load</p>
+          <p className="mt-1 font-tabular text-xl font-semibold text-text-primary">{dash ? `${dash.resource_utilization_pct}%` : "—"}</p>
+          <p className="text-xs text-text-tertiary">across the bench</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Health Distribution</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Badge tone={ragStatusTone("ON_TRACK")} dot>{ragCounts.ON_TRACK} on track</Badge>
+            <Badge tone={ragStatusTone("AT_RISK")} dot>{ragCounts.AT_RISK} at risk</Badge>
+            <Badge tone={ragStatusTone("CRITICAL")} dot>{ragCounts.CRITICAL} critical</Badge>
+          </div>
         </div>
       </div>
 
@@ -161,14 +232,7 @@ export default function ProjectsPage() {
         rows={filtered}
         loading={projects.loading}
         getRowKey={(p) => p.id}
-        onRowClick={
-          offline
-            ? undefined
-            : (p) =>
-                isPreviewId(p.id)
-                  ? push("Sandbox-only projects don't have a detail page — this one was never saved.", "info")
-                  : router.push(`/app/projects/${p.id}`)
-        }
+        onRowClick={offline ? undefined : (p) => router.push(`/app/projects/${p.id}`)}
         emptyTitle="No projects match your filters"
       />
     </div>

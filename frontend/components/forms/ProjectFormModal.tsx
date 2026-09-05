@@ -2,9 +2,6 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import { makePreviewId, simulateLatency } from "@/lib/demoSandbox";
-import { computeRagStatus } from "@/lib/ragStatus";
 import type { Priority, Project, ProjectStatus } from "@/lib/types";
 import { titleCase } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
@@ -17,15 +14,13 @@ const STATUS_OPTIONS: ProjectStatus[] = ["PLANNING", "ACTIVE", "ON_HOLD", "AT_RI
 const PRIORITY_OPTIONS: Priority[] = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
 /**
- * Create-project form, posting to the real POST /projects endpoint (already in lib/api.ts,
- * unused by any page — the Projects page button was a disabled stub). No manager picker: the
- * backend's manager_id references the org's user accounts, and the only endpoint that lists
- * those is admin-gated — adding a real one is a separate, larger change than this form.
- *
- * In a demo (anonymous, read-only) session, submitting never calls that real endpoint (it would
- * just 403) — it resolves locally with a `preview-` id instead, so the sandbox stays fully
- * interactive without writing to the shared seeded portfolio. `onCreated`'s second argument tells
- * the caller which happened, for honest toast copy.
+ * Create-project form, posting to the real POST /projects endpoint. A demo/anonymous session can
+ * submit this too -- the backend now gives a read-only session real write access to a project it
+ * creates itself (Project.created_by_session_id, backend/app/api/projects.py), tagged
+ * server-side from the session's own token. It's a real, permanently-persisted row from the
+ * moment this call succeeds, not a client-only preview: every seeded/flagship program and every
+ * other session's own projects remain protected, but this one is that session's to also edit or
+ * delete going forward.
  *
  * Remount on open via `key` (see TaskFormModal.tsx for why) rather than an effect-based reset.
  */
@@ -36,9 +31,8 @@ export function ProjectFormModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (project: Project, simulated: boolean) => void;
+  onCreated: (project: Project) => void;
 }) {
-  const { isDemo } = useAuth();
   const [name, setName] = useState("");
   const [client, setClient] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("PLANNING");
@@ -71,35 +65,8 @@ export function ProjectFormModal({
         end_date: endDate || undefined,
         budget: budget ? Number(budget) : 0,
       };
-      if (isDemo) {
-        await simulateLatency();
-        const now = new Date().toISOString();
-        const project: Project = {
-          id: makePreviewId(),
-          organization_id: "",
-          name: payload.name,
-          description: null,
-          client: payload.client,
-          manager_id: null,
-          manager_name: null,
-          status: payload.status,
-          priority: payload.priority,
-          start_date: payload.start_date ?? now.slice(0, 10),
-          end_date: payload.end_date ?? now.slice(0, 10),
-          budget: payload.budget,
-          actual_cost: 0,
-          progress: 0,
-          health_score: 100,
-          risk_level: "LOW",
-          rag_status: computeRagStatus(payload.status, 100, "LOW"),
-          created_at: now,
-          updated_at: now,
-        };
-        onCreated(project, true);
-      } else {
-        const project = await api.createProject(payload);
-        onCreated(project, false);
-      }
+      const project = await api.createProject(payload);
+      onCreated(project);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create the project. Please try again.");
