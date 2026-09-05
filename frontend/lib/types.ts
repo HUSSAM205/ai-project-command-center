@@ -256,6 +256,21 @@ export interface AssigneeCandidate {
   explanation: string;
 }
 
+export interface PortfolioEVM {
+  bac: number;
+  pv: number;
+  ev: number;
+  ac: number;
+  cpi: number | null;
+  spi: number | null;
+  sv: number;
+  cv: number;
+  eac: number;
+  vac: number;
+  critical_exposure: number;
+  project_count: number;
+}
+
 export interface DashboardSummary {
   total_projects: number;
   active_projects: number;
@@ -269,6 +284,7 @@ export interface DashboardSummary {
   total_actual_cost: number;
   risk_counts: Record<RiskLevel, number>;
   projects_by_status: Record<ProjectStatus, number>;
+  portfolio_evm: PortfolioEVM;
 }
 
 export interface AuthResponse {

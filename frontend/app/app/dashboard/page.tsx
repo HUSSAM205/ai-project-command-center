@@ -11,8 +11,11 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   Pie,
   PieChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip as RTooltip,
   XAxis,
@@ -68,6 +71,13 @@ const EXECUTIVE_BRIEF_FALLBACK_DELAY_MS = 1000;
 const EMPTY_PROJECTS: Project[] = [];
 const EMPTY_RESOURCES: Resource[] = [];
 const EMPTY_RISKS: (Risk & { project_name?: string })[] = [];
+
+const RAG_BAR_FILL: Record<string, string> = {
+  ON_TRACK: "bg-success-solid",
+  AT_RISK: "bg-warning-solid",
+  CRITICAL: "bg-critical-solid",
+  COMPLETED: "bg-info-solid",
+};
 
 const SEVERITY_COLORS: Record<string, string> = {
   LOW: SOLID_COLORS[riskLevelTone("LOW")],
@@ -138,6 +148,53 @@ export default function DashboardPage() {
   // Grounded purely in data this page already fetched for other cards (GET /dashboard,
   // GET /projects) — see lib/localExecutiveBrief.ts. Recomputed only when that real data changes.
   const localBrief = useMemo(() => (d ? buildLocalExecutiveBrief(d, projectsList) : null), [d, projectsList]);
+
+  // Real, deterministic Planned Value recognition curve for the whole portfolio -- NOT a
+  // historical record (this schema stores no EVM time series; every EVM figure anywhere in this
+  // app is computed fresh from current data, see docs/ENTERPRISE_ARCHITECTURE_SPEC.md). At any
+  // sampled date t, portfolio PV(t) = sum over projects of budget_i * clamp((t-start_i)/
+  // (end_i-start_i), 0, 1) -- the same linear-schedule assumption app/services/common.py's
+  // compute_planned_pct uses per-project, just summed across the portfolio and sampled across
+  // its real date range instead of evaluated once at today.
+  const portfolioTrajectory = useMemo(() => {
+    const withDates = projectsList.filter((p) => p.start_date && p.end_date);
+    if (withDates.length === 0) return { points: [] as { date: string; plannedValue: number }[], todayIndex: -1 };
+    const starts = withDates.map((p) => new Date(p.start_date!).getTime());
+    const ends = withDates.map((p) => new Date(p.end_date!).getTime());
+    const minTime = Math.min(...starts);
+    const maxTime = Math.max(...ends);
+    const span = Math.max(1, maxTime - minTime);
+    const SAMPLE_COUNT = 12;
+    // "Today" is only used to pick the nearest sample point for a ReferenceDot label -- a few
+    // minutes' staleness between reloads is irrelevant here, not a correctness concern the
+    // purity rule is meant to guard against.
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    let todayIndex = -1;
+    const points = Array.from({ length: SAMPLE_COUNT + 1 }, (_, i) => {
+      const t = minTime + (span * i) / SAMPLE_COUNT;
+      if (todayIndex === -1 && t >= now) todayIndex = i;
+      const plannedValue = withDates.reduce((sum, p) => {
+        const s = new Date(p.start_date!).getTime();
+        const e = new Date(p.end_date!).getTime();
+        const frac = e > s ? Math.min(1, Math.max(0, (t - s) / (e - s))) : t >= s ? 1 : 0;
+        return sum + frac * p.budget;
+      }, 0);
+      return { date: new Date(t).toISOString().slice(0, 10), plannedValue };
+    });
+    return { points, todayIndex: todayIndex === -1 ? points.length - 1 : todayIndex };
+  }, [projectsList]);
+
+  const overallocatedResources = useMemo(
+    () => resourcesList.filter((r) => r.utilization_state === "OVERLOADED").sort((a, b) => b.current_workload_hours_per_week - a.current_workload_hours_per_week),
+    [resourcesList],
+  );
+
+  const ragCounts = useMemo(() => {
+    const counts: Record<string, number> = { ON_TRACK: 0, AT_RISK: 0, CRITICAL: 0, COMPLETED: 0 };
+    for (const p of projectsList) counts[p.rag_status] = (counts[p.rag_status] ?? 0) + 1;
+    return counts;
+  }, [projectsList]);
 
   // Show the fallback once it's due AND slow, OR immediately on an outright failure — either way,
   // never a red error box for this card (the "zero visible failure state" goal from the brief).
@@ -211,6 +268,8 @@ export default function DashboardPage() {
           <LiveIndicator status={dashboard.status} />
         </div>
       </div>
+
+      {d && <PortfolioEvmCockpit evm={d.portfolio_evm} trajectory={portfolioTrajectory} />}
 
       {/* Executive AI Brief — Demo AI mode by default (no live provider keys configured); the
           badge always reflects the real source, never implies a live model ran when it didn't. */}
@@ -389,6 +448,25 @@ export default function DashboardPage() {
               live={riskEntries.some(([k]) => k === "CRITICAL")}
               className="mb-3"
             />
+            {(ragCounts.ON_TRACK + ragCounts.AT_RISK + ragCounts.CRITICAL + ragCounts.COMPLETED) > 0 && (
+              <div className="mb-4">
+                <p className="mb-1 text-xs font-medium text-text-tertiary">RAG distribution</p>
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-inset">
+                  {(["ON_TRACK", "AT_RISK", "CRITICAL", "COMPLETED"] as const).map((k) => {
+                    const total = ragCounts.ON_TRACK + ragCounts.AT_RISK + ragCounts.CRITICAL + ragCounts.COMPLETED;
+                    const pct = total > 0 ? (ragCounts[k] / total) * 100 : 0;
+                    if (pct === 0) return null;
+                    return <div key={k} className={cn("h-full", RAG_BAR_FILL[k])} style={{ width: `${pct}%` }} title={`${k.replace("_", " ")}: ${ragCounts[k]}`} />;
+                  })}
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-tertiary">
+                  <span>{ragCounts.ON_TRACK} on track</span>
+                  <span>{ragCounts.AT_RISK} at risk</span>
+                  <span>{ragCounts.CRITICAL} critical</span>
+                  <span>{ragCounts.COMPLETED} completed</span>
+                </div>
+              </div>
+            )}
             {riskEntries.length === 0 ? (
               <EmptyState title="No risks recorded" />
             ) : spatialView ? (
@@ -465,6 +543,23 @@ export default function DashboardPage() {
                   </li>
                 ))}
               </ul>
+            )}
+            {overallocatedResources.length > 0 && (
+              <div className="mt-4 border-t border-border-default pt-3">
+                <p className="mb-1.5 text-xs font-medium text-text-tertiary">Overallocated ({">"}100%)</p>
+                <ul className="space-y-1.5">
+                  {overallocatedResources.slice(0, 5).map((r) => (
+                    <li key={r.id} className="flex items-center justify-between text-xs">
+                      <span className="text-text-secondary">
+                        {r.name} <span className="text-text-tertiary">· {r.role}</span>
+                      </span>
+                      <span className="font-tabular font-semibold text-critical-fg">
+                        {Math.round((r.current_workload_hours_per_week / (r.capacity_hours_per_week || 1)) * 100)}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <Link href="/app/resources" className="mt-4 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">
               View resource plan
@@ -597,6 +692,98 @@ export default function DashboardPage() {
 
 function shortName(name: string) {
   return name.length > 16 ? name.slice(0, 15) + "…" : name;
+}
+
+function evmTone(delta: number): "success" | "critical" {
+  return delta >= 0 ? "success" : "critical";
+}
+
+/** 6 real, computed portfolio-wide EVM tiles (backend/app/api/dashboard.py's portfolio_evm,
+ * summed from every project's own real compute_evm() result -- never a separately-invented
+ * portfolio formula) plus a real Planned-Value recognition curve. No tile carries a trend
+ * sparkline: this schema stores no EVM time series anywhere (every EVM figure is computed fresh
+ * from current data, see docs/ENTERPRISE_ARCHITECTURE_SPEC.md), so a sparkline here would have to
+ * be fabricated history. "Delta vs target" instead compares against a real, fixed reference
+ * (0 for SV/CV, 1.0 for CPI) rather than a fake prior value. */
+function PortfolioEvmCockpit({
+  evm,
+  trajectory,
+}: {
+  evm: import("@/lib/types").PortfolioEVM;
+  trajectory: { points: { date: string; plannedValue: number }[]; todayIndex: number };
+}) {
+  const tiles: { label: string; value: string; delta?: string; tone?: "success" | "critical" }[] = [
+    { label: "Capital Deployed", value: formatCompactCurrency(evm.bac) },
+    { label: "Actual Cost Accrued", value: formatCompactCurrency(evm.ac), delta: `${((evm.ac / (evm.bac || 1)) * 100).toFixed(0)}% of capital` },
+    { label: "Schedule Variance", value: formatCompactCurrency(evm.sv), delta: "vs. 0 (on-plan)", tone: evmTone(evm.sv) },
+    { label: "Cost Variance", value: formatCompactCurrency(evm.cv), delta: "vs. 0 (on-plan)", tone: evmTone(evm.cv) },
+    {
+      label: "Portfolio CPI",
+      value: evm.cpi !== null ? evm.cpi.toFixed(2) : "—",
+      delta: evm.cpi !== null ? `${evm.cpi >= 1 ? "+" : ""}${(evm.cpi - 1).toFixed(2)} vs 1.00 target` : undefined,
+      tone: evm.cpi !== null ? evmTone(evm.cpi - 1) : undefined,
+    },
+    {
+      label: "Critical Exposure",
+      value: formatCompactCurrency(evm.critical_exposure),
+      delta: `${((evm.critical_exposure / (evm.bac || 1)) * 100).toFixed(0)}% of capital, ${evm.project_count} programs`,
+      tone: evm.critical_exposure > 0 ? "critical" : "success",
+    },
+  ];
+
+  const toneClass: Record<string, string> = {
+    success: "text-success-fg",
+    critical: "text-critical-fg",
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="rounded-lg border border-border-default bg-surface p-3.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-text-tertiary">{tile.label}</p>
+            <p className="mt-1 font-tabular text-lg font-semibold text-text-primary">{tile.value}</p>
+            {tile.delta && <p className={cn("mt-0.5 font-tabular text-[11px]", tile.tone ? toneClass[tile.tone] : "text-text-tertiary")}>{tile.delta}</p>}
+          </div>
+        ))}
+      </div>
+
+      {trajectory.points.length > 0 && (
+        <MotionCard>
+          <CardHeader>
+            <div>
+              <CardTitle>Financial Trajectory</CardTitle>
+              <CardDescription>
+                Planned Value recognition curve computed from real project schedules — today&apos;s actual EV/AC marked. Not a
+                historical record; this deployment stores no EVM time series.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={trajectory.points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border-default" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} minTickGap={30} />
+                <YAxis tickFormatter={(v) => formatCompactCurrency(v)} tick={{ fontSize: 10 }} width={56} />
+                <RTooltip formatter={(v) => formatCompactCurrency(Number(v))} />
+                <Line type="monotone" dataKey="plannedValue" name="Planned Value" stroke="var(--color-info-fg)" strokeWidth={2} dot={false} />
+                {trajectory.todayIndex >= 0 && (
+                  <ReferenceDot
+                    x={trajectory.points[trajectory.todayIndex]?.date}
+                    y={evm.ev}
+                    r={5}
+                    fill="var(--color-success-fg)"
+                    stroke="none"
+                    label={{ value: `Today: EV ${formatCompactCurrency(evm.ev)} / AC ${formatCompactCurrency(evm.ac)}`, fontSize: 10, position: "top" }}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </MotionCard>
+      )}
+    </div>
+  );
 }
 
 // Compact stat readout for a bento cell's header area — deliberately lighter than MetricCard

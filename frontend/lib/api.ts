@@ -345,8 +345,8 @@ export const api = {
   // AI Assistant / Executive Brief (Phase 2)
   executiveBrief: () => request<AIResponse>("/ai/executive-brief"),
   projectAiInsights: (projectId: string) => request<AIResponse>(`/projects/${projectId}/ai-insights`),
-  askAssistant: (question: string, projectId?: string) =>
-    request<AIResponse>("/ai/assistant", { method: "POST", body: { question, project_id: projectId } }),
+  askAssistant: (question: string, projectId?: string, file?: File) =>
+    askAssistantRequest(question, projectId, file),
 
   // Feedback (Phase 5) — open to any authenticated caller, including anonymous demo sessions.
   submitFeedback: (message: string) => request<FeedbackEntry>("/feedback", { method: "POST", body: { message } }),
@@ -401,6 +401,41 @@ export const api = {
       request<RoadmapPhase[]>(`/consulting/business-cases/${businessCaseId}/roadmap`, { method: "POST" }),
   },
 };
+
+/** POST /ai/assistant is multipart/form-data (not JSON) specifically so it can carry an optional
+ * chat attachment (backend/app/api/ai.py) -- same reasoning as uploadDocumentRequest below, same
+ * pattern. The attachment is transient (read for this one question only, never persisted to the
+ * documents/document_chunks tables the real Documents page uses). */
+async function askAssistantRequest(question: string, projectId?: string, file?: File): Promise<AIResponse> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const form = new FormData();
+  form.append("question", question);
+  if (projectId) form.append("project_id", projectId);
+  if (file) form.append("file", file);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/ai/assistant`, { method: "POST", headers, body: form });
+  } catch {
+    throw new ApiError("Could not reach the API. The backend may be offline.", 0);
+  }
+
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data?.detail || data?.message || message;
+    } catch {
+      // ignore body parse failure
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  return (await res.json()) as AIResponse;
+}
 
 /** Multipart upload can't go through `request()` (it JSON-stringifies every body and forces
  * a `Content-Type: application/json` header, which would break the multipart boundary) —

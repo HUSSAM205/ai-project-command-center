@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Mic, MicOff, Send, Sparkles } from "lucide-react";
+import { useCallback, useRef, useState, type DragEvent } from "react";
+import { FileText, Mic, MicOff, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useVoiceInput } from "@/lib/useVoiceInput";
@@ -27,7 +27,14 @@ const EXAMPLE_QUESTIONS = [
 interface Exchange {
   question: string;
   answer: AIResponse;
+  attachedFilename?: string;
 }
+
+// Matches backend/app/services/chat_attachment.py's ALLOWED_CHAT_EXTENSIONS exactly. Client-side
+// check is just a fast, friendly rejection -- the server re-validates by real content/magic
+// bytes regardless (same discipline as the Documents page upload).
+const ACCEPTED_CHAT_EXTENSIONS = [".pdf", ".docx", ".txt", ".csv", ".json"];
+const MAX_CHAT_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 /** Shared Q&A logic and rendering for both surfaces that ground a conversation in real project
  * data via the same real POST /api/v1/ai/assistant endpoint (app/api/ai.py) -- the full
@@ -41,9 +48,28 @@ export function AssistantChat({ compact = false, initialProjectId }: { compact?:
   const [history, setHistory] = useState<Exchange[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleTranscript = useCallback((text: string) => setQuestion(text), []);
   const voice = useVoiceInput(handleTranscript);
+
+  function attachFile(file: File | undefined | null) {
+    if (!file) return;
+    const ext = "." + (file.name.split(".").pop()?.toLowerCase() ?? "");
+    if (!ACCEPTED_CHAT_EXTENSIONS.includes(ext)) {
+      setAttachError(`.${ext.slice(1)} isn't supported here — attach a PDF, DOCX, TXT, CSV, or JSON file.`);
+      return;
+    }
+    if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+      setAttachError(`Attachments are limited to ${MAX_CHAT_ATTACHMENT_BYTES / (1024 * 1024)}MB.`);
+      return;
+    }
+    setAttachError(null);
+    setAttachedFile(file);
+  }
 
   async function ask(q: string) {
     const text = q.trim();
@@ -51,15 +77,23 @@ export function AssistantChat({ compact = false, initialProjectId }: { compact?:
     if (voice.listening) voice.stop();
     setLoading(true);
     setError(null);
+    const fileToSend = attachedFile ?? undefined;
     try {
-      const answer = await api.askAssistant(text, projectId || undefined);
-      setHistory((h) => [...h, { question: text, answer }]);
+      const answer = await api.askAssistant(text, projectId || undefined, fileToSend);
+      setHistory((h) => [...h, { question: text, answer, attachedFilename: fileToSend?.name }]);
       setQuestion("");
+      setAttachedFile(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "The assistant couldn't answer that.");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDrop(e: DragEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setDragActive(false);
+    attachFile(e.dataTransfer.files?.[0]);
   }
 
   return (
@@ -100,8 +134,16 @@ export function AssistantChat({ compact = false, initialProjectId }: { compact?:
       <div className="flex-1 space-y-4 overflow-y-auto">
         {history.map((exchange, i) => (
           <div key={i} className="space-y-2">
-            <div className="ml-auto max-w-[85%] rounded-lg rounded-tr-sm bg-brand-700 px-3.5 py-2 text-sm text-white">
-              {exchange.question}
+            <div className="ml-auto max-w-[85%] space-y-1.5 text-right">
+              {exchange.attachedFilename && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-border-default bg-surface px-2.5 py-1 text-[11px] text-text-tertiary">
+                  <FileText className="h-3 w-3" aria-hidden="true" />
+                  {exchange.attachedFilename}
+                </span>
+              )}
+              <div className="rounded-lg rounded-tr-sm bg-brand-700 px-3.5 py-2 text-left text-sm text-white">
+                {exchange.question}
+              </div>
             </div>
             <Card className="max-w-[85%]">
               <CardContent className="space-y-2 py-3.5">
@@ -138,22 +180,66 @@ export function AssistantChat({ compact = false, initialProjectId }: { compact?:
           e.preventDefault();
           ask(question);
         }}
-        className={cn("flex items-end gap-2 border-t border-border-default pt-3", !compact && "sticky bottom-0 bg-canvas pt-4")}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={handleDrop}
+        className={cn(
+          "flex flex-col gap-2 rounded-md border-t border-border-default pt-3",
+          !compact && "sticky bottom-0 bg-canvas pt-4",
+          dragActive && "border border-dashed border-brand-500 bg-brand-50 dark:bg-brand-950/20",
+        )}
       >
-        <Textarea
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              ask(question);
-            }
-          }}
-          placeholder="Ask about a project, risk, resource, or budget…"
-          className="min-h-[44px]"
-          disabled={loading}
-        />
-        {voice.supported && (
+        {attachedFile && (
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-border-default bg-surface px-2.5 py-1 text-xs text-text-secondary">
+            <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {attachedFile.name}
+            <button
+              type="button"
+              onClick={() => setAttachedFile(null)}
+              aria-label={`Remove ${attachedFile.name}`}
+              className="text-text-tertiary hover:text-text-primary"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        )}
+        {attachError && <p className="text-xs text-critical-fg">{attachError}</p>}
+        <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_CHAT_EXTENSIONS.join(",")}
+            className="sr-only"
+            onChange={(e) => attachFile(e.target.files?.[0])}
+            aria-label="Attach a file to this question"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Attach a file"
+            title="Attach a PDF, DOCX, TXT, CSV, or JSON file"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
+          <Textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                ask(question);
+              }
+            }}
+            placeholder="Ask about a project, risk, resource, or budget — or drop a file here…"
+            className="min-h-[44px]"
+            disabled={loading}
+          />
+          {voice.supported && (
           <Button
             type="button"
             variant={voice.listening ? "secondary" : "outline"}
@@ -173,9 +259,10 @@ export function AssistantChat({ compact = false, initialProjectId }: { compact?:
             )}
           </Button>
         )}
-        <Button type="submit" disabled={loading || !question.trim()} aria-label="Send">
-          <Send className="h-4 w-4" />
-        </Button>
+          <Button type="submit" disabled={loading || !question.trim()} aria-label="Send">
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </form>
     </div>
   );

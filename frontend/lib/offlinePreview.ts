@@ -526,5 +526,22 @@ export function buildOfflineDashboard() {
     total_actual_cost: 4_340_000,
     risk_counts: { LOW: 1, MEDIUM: 2, HIGH: 1, CRITICAL: 1 },
     projects_by_status: { PLANNING: 1, ACTIVE: 1, ON_HOLD: 0, AT_RISK: 1, COMPLETED: 0, CANCELLED: 0 },
+    // Same EVM formula as backend/app/services/evm.py, applied to these 3 offline projects' own
+    // budget/actual_cost/progress above (EV) and the planned_pct figures buildOfflinePmoPortfolio
+    // already uses for the same 3 projects (PV) -- not independently invented numbers.
+    portfolio_evm: {
+      bac: 8_300_000,
+      pv: 4_208_000,
+      ev: 4_042_000,
+      ac: 4_340_000,
+      cpi: 0.9313,
+      spi: 0.9606,
+      sv: -166_000,
+      cv: -298_000,
+      eac: 8_913_000,
+      vac: -613_000,
+      critical_exposure: 4_800_000,
+      project_count: 3,
+    },
   };
 }
