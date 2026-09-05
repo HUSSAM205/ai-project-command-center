@@ -30,8 +30,12 @@ const cellText: Record<string, string> = {
  * grid. Cells are colored/counted by severity derived from probability * impact, matching the
  * backend's risk-severity thresholds.
  */
-export function RiskMatrix({ risks }: { risks: Risk[] }) {
-  const [selected, setSelected] = useState<{ p: number; i: number } | null>(null);
+export function RiskMatrix({ risks, onSelect }: { risks: Risk[]; onSelect?: (cell: { p: number; i: number } | null) => void }) {
+  const [selected, setSelectedState] = useState<{ p: number; i: number } | null>(null);
+  function setSelected(cell: { p: number; i: number } | null) {
+    setSelectedState(cell);
+    onSelect?.(cell);
+  }
 
   const grid = useMemo(() => {
     const map = new Map<string, Risk[]>();

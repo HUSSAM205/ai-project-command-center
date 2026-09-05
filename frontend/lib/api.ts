@@ -9,6 +9,7 @@ import type {
   AssigneeCandidate,
   AuditLogPage,
   AuthResponse,
+  Bottleneck,
   Budget,
   BudgetTransaction,
   BusinessCase,
@@ -254,6 +255,7 @@ export const api = {
   projectHealth: (id: string) => request<HealthBreakdown>(`/projects/${id}/health`),
   projectForecast: (id: string) => request<CostForecast>(`/projects/${id}/forecast`),
   projectMonteCarloForecast: (id: string) => request<MonteCarloForecast>(`/projects/${id}/forecast/monte-carlo`),
+  projectBottlenecks: (id: string) => request<Bottleneck[]>(`/projects/${id}/bottlenecks`),
 
   // Tasks
   tasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),

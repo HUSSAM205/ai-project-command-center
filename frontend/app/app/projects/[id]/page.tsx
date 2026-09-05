@@ -43,6 +43,7 @@ import { RiskMatrix } from "@/components/viz/RiskMatrix";
 import { cn, formatCompactCurrency, formatCurrency, formatDate, formatPercent, initials, titleCase } from "@/lib/utils";
 import type {
   BoardroomMemo,
+  Bottleneck,
   Budget,
   BudgetTransaction,
   ContractLedger,
@@ -114,6 +115,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const raci = useApi(() => pmoApi.raci(id), [id]);
   const stageGates = useApi(() => pmoApi.stageGates(id), [id]);
   const contractLedger = useApi(() => pmoApi.contractLedger(id), [id]);
+  const bottlenecks = useApi(() => api.projectBottlenecks(id), [id]);
 
   const team = useMemo<TeamRow[]>(() => {
     if (!allocations.data || !resources.data) return [];
@@ -479,6 +481,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 stageGates={stageGates}
                 contractLedger={contractLedger}
                 tasks={tasks}
+                bottlenecks={bottlenecks}
               />
             ),
           },
@@ -840,6 +843,7 @@ function PMOTab({
   stageGates,
   contractLedger,
   tasks,
+  bottlenecks,
 }: {
   projectId: string;
   projectName: string;
@@ -849,6 +853,7 @@ function PMOTab({
   stageGates: ReturnType<typeof useApi<StageGate[]>>;
   contractLedger: ReturnType<typeof useApi<ContractLedger>>;
   tasks: ReturnType<typeof useApi<Task[]>>;
+  bottlenecks: ReturnType<typeof useApi<Bottleneck[]>>;
 }) {
   const memoTrigger = autoAction?.action === "memo" ? autoAction.nonce : null;
   const monteCarloTrigger = autoAction?.action === "montecarlo" ? autoAction.nonce : null;
@@ -856,6 +861,7 @@ function PMOTab({
   return (
     <div className="space-y-6">
       <EVMCard loading={evm.loading} error={evm.error} data={evm.data} onRetry={evm.reload} />
+      <BottlenecksCard loading={bottlenecks.loading} error={bottlenecks.error} data={bottlenecks.data} onRetry={bottlenecks.reload} />
       <WhatIfCard projectId={projectId} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <ContractLedgerCard loading={contractLedger.loading} error={contractLedger.error} data={contractLedger.data} onRetry={contractLedger.reload} />
@@ -1012,7 +1018,7 @@ function WhatIfCard({ projectId }: { projectId: string }) {
     : [];
 
   return (
-    <Card>
+    <Card id="what-if-sandbox">
       <CardHeader>
         <div>
           <CardTitle>What-If Scenario Sandbox</CardTitle>
@@ -1114,6 +1120,77 @@ function WhatIfCard({ projectId }: { projectId: string }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Real Critical Path Method (backend/app/services/bottleneck_detection.py) -- flags a critical-
+ * path task that is genuinely behind (BLOCKED, or overdue and not DONE), its real transitive
+ * downstream impact, and a reassignment suggestion reusing the exact same explainable
+ * candidate-ranking the Resources page's "Suggest Assignees" card already uses. An empty result
+ * is a real, honest "nothing on the critical path is currently behind" — not hidden as a loading
+ * state. */
+function BottlenecksCard({
+  loading,
+  error,
+  data,
+  onRetry,
+}: {
+  loading: boolean;
+  error: Error | null;
+  data: Bottleneck[] | null;
+  onRetry: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Critical Path Bottlenecks</CardTitle>
+          <CardDescription>Critical-path tasks currently behind schedule, with real downstream impact and a suggested fix</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <Spinner />
+        ) : error ? (
+          <ErrorState description={error.message} onRetry={onRetry} />
+        ) : !data || data.length === 0 ? (
+          <EmptyState title="No bottlenecks detected" description="Nothing on the critical path is currently blocked or overdue." />
+        ) : (
+          <div className="space-y-3">
+            {data.map((b) => (
+              <div key={b.task_id} className="rounded-lg border border-critical-border bg-critical-bg/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-semibold text-text-primary">{b.task_title}</p>
+                  {b.slippage_days > 0 && (
+                    <Badge tone="critical" dot>
+                      {b.slippage_days}d slipped
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-text-secondary">{b.root_cause}</p>
+                {b.downstream_task_titles.length > 0 && (
+                  <p className="mt-2 text-xs text-text-tertiary">
+                    Blocks {b.downstream_task_titles.length} downstream task{b.downstream_task_titles.length === 1 ? "" : "s"}:{" "}
+                    {b.downstream_task_titles.slice(0, 4).join(", ")}
+                    {b.downstream_task_titles.length > 4 ? ", …" : ""}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border-default pt-3">
+                  <p className="text-xs text-text-secondary">{b.suggested_action}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => document.getElementById("what-if-sandbox")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  >
+                    Simulate Mitigation
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>

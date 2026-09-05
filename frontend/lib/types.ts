@@ -256,6 +256,17 @@ export interface AssigneeCandidate {
   explanation: string;
 }
 
+export interface Bottleneck {
+  task_id: string;
+  task_title: string;
+  root_cause: string;
+  slippage_days: number;
+  downstream_task_ids: string[];
+  downstream_task_titles: string[];
+  suggested_action: string;
+  suggested_candidate: AssigneeCandidate | null;
+}
+
 export interface PortfolioEVM {
   bac: number;
   pv: number;

@@ -40,6 +40,7 @@ export default function RisksPage() {
   const [localRisks, setLocalRisks] = useState<(Risk & { project_name?: string })[] | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
+  const [matrixCell, setMatrixCell] = useState<{ p: number; i: number } | null>(null);
 
   const offline = risksApi.data?.offline ?? false;
   const risks = localRisks ?? risksApi.data?.data ?? EMPTY_RISKS;
@@ -89,9 +90,10 @@ export default function RisksPage() {
       if (category && r.category !== category) return false;
       if (severity && r.severity !== severity) return false;
       if (status && r.status !== status) return false;
+      if (matrixCell && (r.probability !== matrixCell.p || r.impact !== matrixCell.i)) return false;
       return true;
     });
-  }, [risks, query, category, severity, status]);
+  }, [risks, query, category, severity, status, matrixCell]);
 
   const columns: Column<Risk & { project_name?: string }>[] = [
     { key: "title", header: "Risk", sortValue: (r) => r.title, render: (r) => <span className="font-medium text-text-primary">{r.title}</span> },
@@ -152,7 +154,7 @@ export default function RisksPage() {
                   <CardDescription>Portfolio-wide risk distribution</CardDescription>
                 </div>
               </CardHeader>
-              <CardContent>{risksApi.loading ? <Spinner /> : <RiskMatrix risks={risks} />}</CardContent>
+              <CardContent>{risksApi.loading ? <Spinner /> : <RiskMatrix risks={risks} onSelect={setMatrixCell} />}</CardContent>
             </Card>
 
             <Card>
@@ -174,6 +176,11 @@ export default function RisksPage() {
             <Select className="w-44" value={category} onChange={(e) => setCategory(e.target.value)} options={CATEGORY_OPTIONS.map((c) => ({ label: titleCase(c), value: c }))} placeholder="All categories" />
             <Select className="w-40" value={severity} onChange={(e) => setSeverity(e.target.value)} options={SEVERITY_OPTIONS.map((s) => ({ label: titleCase(s), value: s }))} placeholder="All severities" />
             <Select className="w-40" value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS.map((s) => ({ label: titleCase(s), value: s }))} placeholder="All statuses" />
+            {matrixCell && (
+              <Badge tone="neutral" className="cursor-pointer" onClick={() => setMatrixCell(null)}>
+                Matrix: P{matrixCell.p} × I{matrixCell.i} ✕
+              </Badge>
+            )}
           </div>
 
           <DataTable columns={columns} rows={filtered} loading={risksApi.loading} getRowKey={(r) => r.id} emptyTitle="No risks match your filters" />
