@@ -16,7 +16,9 @@ from app.repositories.projects import list_projects
 from app.repositories.resources import list_resources
 from app.repositories.risks import list_all_risks_for_org
 from app.repositories.tasks import list_all_tasks_for_org
-from app.schemas.dashboard import DashboardOut, UpcomingDeadline
+from app.models.enums import RagStatus
+from app.schemas.dashboard import DashboardOut, PortfolioEVMOut, UpcomingDeadline
+from app.services.evm import compute_evm
 from app.services.resource_state import compute_all_resource_states, count_overloaded_resources_for_project
 
 router = APIRouter(prefix="/api/v1", tags=["dashboard"])
@@ -57,6 +59,38 @@ def build_dashboard(db: Session, organization_id: UUID) -> DashboardOut:
         out = serialize_project(project, tasks, risks, overloaded)
         project_outs.append(out)
         health_scores.append(out.health_score)
+
+    # Portfolio-wide EVM: BAC/PV/EV/AC/EAC summed across every project (each via the exact same
+    # compute_evm() every per-project /evm call uses), then CPI/SPI/SV/CV/VAC derived from those
+    # sums -- never a separately-invented portfolio formula. `out.rag_status` (just computed
+    # above, same loop order as `projects`) drives critical_exposure with zero extra queries.
+    portfolio_bac = portfolio_pv = portfolio_ev = portfolio_ac = portfolio_eac = 0.0
+    critical_exposure = 0.0
+    for project, out in zip(projects, project_outs):
+        evm_result = compute_evm(project, today=date.today())
+        portfolio_bac += evm_result.bac
+        portfolio_pv += evm_result.pv
+        portfolio_ev += evm_result.ev
+        portfolio_ac += evm_result.ac
+        portfolio_eac += evm_result.eac
+        if out.rag_status == RagStatus.CRITICAL:
+            critical_exposure += evm_result.bac
+    portfolio_cpi = portfolio_ev / portfolio_ac if portfolio_ac > 0 else None
+    portfolio_spi = portfolio_ev / portfolio_pv if portfolio_pv > 0 else None
+    portfolio_evm = PortfolioEVMOut(
+        bac=round(portfolio_bac, 2),
+        pv=round(portfolio_pv, 2),
+        ev=round(portfolio_ev, 2),
+        ac=round(portfolio_ac, 2),
+        cpi=round(portfolio_cpi, 4) if portfolio_cpi is not None else None,
+        spi=round(portfolio_spi, 4) if portfolio_spi is not None else None,
+        sv=round(portfolio_ev - portfolio_pv, 2),
+        cv=round(portfolio_ev - portfolio_ac, 2),
+        eac=round(portfolio_eac, 2),
+        vac=round(portfolio_bac - portfolio_eac, 2),
+        critical_exposure=round(critical_exposure, 2),
+        project_count=len(projects),
+    )
 
     total_projects = len(projects)
     active_projects = sum(1 for p in projects if p.status == ProjectStatus.ACTIVE)
@@ -128,6 +162,7 @@ def build_dashboard(db: Session, organization_id: UUID) -> DashboardOut:
         overloaded_resources=overloaded_resources,
         total_resources=len(resource_states),
         projects=project_outs,
+        portfolio_evm=portfolio_evm,
     )
 
 

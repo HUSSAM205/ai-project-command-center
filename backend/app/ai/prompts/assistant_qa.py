@@ -19,6 +19,8 @@ Project data (if scope is "project"): {project}
 Portfolio data (if scope is "portfolio"): {portfolio}
 Resource utilization: {resources}
 Delivery-blocking task (task other work depends on, not yet done): {blocking_task}
+Document attached to this question by the user (if any -- use it as additional real evidence, \
+do not treat it as more authoritative than the platform data above where they conflict): {attached_document}
 """
 
 

@@ -340,10 +340,62 @@ class DemoAIProvider(AIProvider):
             prompt_version=document_qa.PROMPT_VERSION,
         )
 
+    def _answer_with_attachment(self, context: dict) -> AIResponse:
+        """A file was attached to this question (POST /api/v1/ai/assistant, multipart -- see
+        app/services/chat_attachment.py). No vector index exists for a transient chat attachment
+        (unlike the persistent per-document pipeline answer_document_question above uses), so
+        this scores plain-text paragraphs by real word-overlap with the question -- simpler than
+        embedding similarity, but a real, computed relevance signal over the actual extracted
+        text, never a fabricated summary of content Demo AI has no model to actually read."""
+        question = context["question"]
+        attached = context["attached_document"]
+        filename = attached["filename"]
+        text = attached["text"]
+
+        paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+        if not paragraphs:
+            paragraphs = [text.strip()]
+
+        stopwords = {"the", "a", "an", "is", "are", "was", "were", "of", "to", "in", "on", "for", "and", "or", "this", "that", "what", "which", "who"}
+        question_words = {w for w in question.lower().split() if len(w) > 2 and w not in stopwords}
+
+        def score(paragraph: str) -> int:
+            p_lower = paragraph.lower()
+            return sum(1 for w in question_words if w in p_lower)
+
+        ranked = sorted(paragraphs, key=score, reverse=True)
+        top = ranked[0]
+        top_score = score(top)
+
+        if top_score == 0:
+            summary = (
+                f'"{filename}" ({len(text)} characters) was attached, but no wording in it directly '
+                f"matches this question — here is its opening excerpt instead."
+            )
+            excerpt = paragraphs[0]
+        else:
+            summary = f'From "{filename}": {top[:300]}{"…" if len(top) > 300 else ""}'
+            excerpt = top
+
+        return AIResponse(
+            summary=summary,
+            confidence=0.55 if top_score > 0 else 0.3,
+            source="demo_ai",
+            detail=(
+                f'Question: "{question}"\n'
+                f"Demo AI mode has no live model to synthesize a free-text answer over the attachment, "
+                f"so this returns the most relevant excerpt found by real keyword overlap:\n\n{excerpt}"
+            ),
+            data={"attached_filename": filename, "attached_chars": len(text), "match_score": top_score},
+            prompt_version=assistant_qa.PROMPT_VERSION,
+        )
+
     def answer_project_question(self, context: dict) -> AIResponse:
         question = context["question"]
         q = question.lower()
 
+        if context.get("attached_document"):
+            return self._answer_with_attachment(context)
         if any(kw in q for kw in ("overload", "who is over", "too much work", "over capacity")):
             return self._answer_overload(context)
         if any(kw in q for kw in ("blocking", "block delivery", "which task is block", "blocked")):

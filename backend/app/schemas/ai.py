@@ -1,5 +1,4 @@
 from typing import Any, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -19,8 +18,3 @@ class AIResponse(BaseModel):
     detail: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     prompt_version: str | None = None
-
-
-class AssistantRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
-    project_id: UUID | None = None

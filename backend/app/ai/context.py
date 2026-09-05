@@ -229,10 +229,17 @@ def _find_blocking_task(db: Session, tasks: list[Task]) -> dict | None:
 
 
 def build_assistant_context(
-    db: Session, organization_id: UUID, question: str, project: Project | None
+    db: Session,
+    organization_id: UUID,
+    question: str,
+    project: Project | None,
+    attached_document: dict | None = None,
 ) -> dict:
     """context for POST /api/v1/ai/assistant. Scoped to a single project if `project_id`
-    was given in the request body, otherwise portfolio-wide."""
+    was given in the request body, otherwise portfolio-wide. `attached_document`, when given,
+    is {"filename": str, "text": str} from app/services/chat_attachment.py -- always present as
+    a key (never omitted) since assistant_qa.TEMPLATE's {attached_document} placeholder would
+    otherwise KeyError on str.format for a question with no attachment."""
     if project is not None:
         scope = "project"
         project_ctx = build_project_context(db, organization_id, project)
@@ -270,6 +277,12 @@ def build_assistant_context(
         "portfolio": portfolio_ctx,
         "resources": resource_rows,
         "blocking_task": blocking_task,
+        # Kept as the raw {"filename", "text"} dict (or None) rather than pre-formatted into a
+        # string: DemoAIProvider.answer_project_question (app/ai/providers/demo.py) reads
+        # filename/text separately to do a real keyword-match excerpt search, while
+        # assistant_qa.TEMPLATE's str.format just renders the dict's repr for a live provider --
+        # acceptable there since an LLM parses loosely-structured context fine.
+        "attached_document": attached_document,
     }
 
 
