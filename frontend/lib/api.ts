@@ -9,6 +9,8 @@ import type {
   AssigneeCandidate,
   AuditLogPage,
   AuthResponse,
+  AutomationLog,
+  AutomationRule,
   BalanceSuggestion,
   Bottleneck,
   Budget,
@@ -25,6 +27,8 @@ import type {
   MeetingCommitResponse,
   Milestone,
   MonteCarloForecast,
+  Notification,
+  NotificationList,
   Project,
   ResourceMatrixRow,
   Report,
@@ -361,6 +365,15 @@ export const api = {
         })),
       },
     }),
+
+  // Event Automation Engine & Smart Notifications
+  automations: () => request<AutomationRule[]>("/automations"),
+  toggleAutomation: (id: string) => request<AutomationRule>(`/automations/${id}/toggle`, { method: "POST" }),
+  testRunAutomation: (id: string) => request<AutomationLog>(`/automations/${id}/test-run`, { method: "POST" }),
+  automationLogs: (id: string) => request<AutomationLog[]>(`/automations/${id}/logs`),
+  notifications: () => request<NotificationList>("/notifications"),
+  markNotificationRead: (id: string) => request<Notification>(`/notifications/${id}/read`, { method: "PATCH" }),
+  markAllNotificationsRead: () => request<void>("/notifications/mark-all-read", { method: "POST" }),
 
   // Analytics & Reports (Phase 6)
   analytics: () => request<AnalyticsSummary>("/analytics"),

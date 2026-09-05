@@ -38,6 +38,16 @@ export type RiskCategory =
 
 export type RiskStatus = "OPEN" | "MITIGATING" | "CLOSED";
 
+export type AutomationTriggerType = "TASK_OVERDUE" | "BUDGET_BURNOVER" | "CRITICAL_RISK_SPOTTED";
+
+export type AutomationActionType = "AUTO_CREATE_RISK" | "DISPATCH_NOTIFICATION" | "RECALCULATE_HEALTH";
+
+// A rule evaluation's real outcome (backend/app/models/enums.py's AutomationOutcome) --
+// CONDITION_NOT_MET is a normal, honest result (most evaluations), not an error.
+export type AutomationOutcome = "FIRED" | "CONDITION_NOT_MET" | "ERROR";
+
+export type NotificationCategory = "CRITICAL" | "AI_ALERT" | "WORKFLOW";
+
 export type DocumentStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 
 // Mirrors backend AIResponse (app/schemas/ai.py) — the canonical shape for every
@@ -394,6 +404,47 @@ export interface MeetingCommitResponse {
   // owner_name values that couldn't be matched to exactly one real Resource in this org -- those
   // tasks were created unassigned, not guessed.
   unresolved_owners: string[];
+}
+
+// Event Automation Engine (backend/app/services/automation_engine.py) -- this deployment has no
+// background scheduler, so a rule's condition is evaluated for real either lazily (piggybacked on
+// GET /notifications, at most every few minutes) or explicitly via /test-run. Never a literally-
+// continuous watcher, and never presented as one in the UI copy either.
+export interface AutomationRule {
+  id: string;
+  name: string;
+  trigger_type: AutomationTriggerType;
+  condition_json: Record<string, unknown>;
+  action_type: AutomationActionType;
+  action_params_json: Record<string, unknown>;
+  is_active: boolean;
+  last_triggered_at: string | null;
+}
+
+export interface AutomationLog {
+  id: string;
+  rule_id: string;
+  triggered_at: string;
+  outcome: AutomationOutcome;
+  detail: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+}
+
+export interface Notification {
+  id: string;
+  category: NotificationCategory;
+  title: string;
+  message: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationList {
+  notifications: Notification[];
+  unread_count: number;
 }
 
 // Analytics (Phase 6) — mirrors backend app/schemas/analytics.py.

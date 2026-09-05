@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { CornerDownLeft, Dices, FolderKanban, Presentation, Search } from "lucide-react";
+import { CornerDownLeft, Dices, Download, FolderKanban, ListChecks, Presentation, Search, ShieldAlert, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { softSpring } from "@/lib/motion";
 import { api } from "@/lib/api";
-import { commands as staticCommands, dispatchPmoCommand, type Command } from "@/lib/commands";
+import { commands as staticCommands, dispatchPmoCommand, dispatchQuickAction, type Command } from "@/lib/commands";
 import { bestFuzzyScore } from "@/lib/fuzzy";
 
 const OPEN_EVENT = "aipcc:open-command-bar";
@@ -53,6 +53,9 @@ export function CommandBar() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [projectCommands, setProjectCommands] = useState<Command[] | null>(null);
   const [projectsFailed, setProjectsFailed] = useState(false);
+  const [taskCommands, setTaskCommands] = useState<Command[] | null>(null);
+  const [resourceCommands, setResourceCommands] = useState<Command[] | null>(null);
+  const [riskCommands, setRiskCommands] = useState<Command[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Global open shortcut + external trigger event.
@@ -131,6 +134,93 @@ export function CommandBar() {
     };
   }, [open, projectCommands]);
 
+  // Deep Search: tasks/resources/risks, lazily fetched the same way as projects above — each
+  // independently gated and failure-tolerant, so one slow/failed org-wide fetch never blocks the
+  // others or makes the palette itself unusable. Tasks and risks have no per-record detail route
+  // (only the list pages do), so their href pre-fills that list page's own real title-search filter
+  // (?q=) rather than pointing at a page that doesn't exist. Resources gained a matching ?q= filter
+  // on its DataTable specifically so this deep link actually lands on the right row.
+  useEffect(() => {
+    if (!open || taskCommands !== null) return;
+    let cancelled = false;
+    api
+      .allTasks()
+      .then((list) => {
+        if (cancelled) return;
+        setTaskCommands(
+          list.map((t) => ({
+            id: `task-${t.id}`,
+            label: t.title,
+            href: `/app/tasks?q=${encodeURIComponent(t.title)}`,
+            group: "Tasks",
+            icon: ListChecks,
+            keywords: t.project_name ? [t.project_name] : [],
+          })),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTaskCommands([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, taskCommands]);
+
+  useEffect(() => {
+    if (!open || resourceCommands !== null) return;
+    let cancelled = false;
+    api
+      .resources()
+      .then((list) => {
+        if (cancelled) return;
+        setResourceCommands(
+          list.map((r) => ({
+            id: `resource-${r.id}`,
+            label: r.name,
+            href: `/app/resources?q=${encodeURIComponent(r.name)}`,
+            group: "Resources",
+            icon: Users,
+            keywords: [r.role, r.department].filter((v): v is string => !!v),
+          })),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setResourceCommands([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, resourceCommands]);
+
+  useEffect(() => {
+    if (!open || riskCommands !== null) return;
+    let cancelled = false;
+    api
+      .allRisks()
+      .then((list) => {
+        if (cancelled) return;
+        setRiskCommands(
+          list.map((r) => ({
+            id: `risk-${r.id}`,
+            label: r.title,
+            href: `/app/risks?q=${encodeURIComponent(r.title)}`,
+            group: "Risks",
+            icon: ShieldAlert,
+            keywords: r.project_name ? [r.project_name] : [],
+          })),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRiskCommands([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, riskCommands]);
+
   // Context-aware action commands — real side effects, not navigation (see lib/commands.ts's
   // `onSelect` extension). Only offered while the user is actually on that project's detail page,
   // since the action targets components mounted there (BoardroomMemoCard / MonteCarloCard in
@@ -158,9 +248,76 @@ export function CommandBar() {
     ];
   }, [currentProjectId]);
 
+  // Quick-action slash commands — real side effects (or a real filter-preserving navigation),
+  // never a placeholder. Each targets a page that already implements the underlying capability
+  // for real (task creation modal, What-If sandbox, risk severity filter, executive PDF export);
+  // this just makes each one reachable from anywhere via Cmd+K. Delivery uses QUICK_ACTION_EVENT
+  // when already on the target page (immediate) or a `?quick=` query param the target page reads
+  // on mount otherwise — see lib/commands.ts's docstring on QUICK_ACTION_EVENT for why.
+  const quickActionCommands = useMemo<Command[]>(
+    () => [
+      {
+        id: "quick-new-task",
+        label: "/new-task — Create a new task",
+        group: "Actions",
+        icon: ListChecks,
+        keywords: ["create task", "add task"],
+        onSelect: () => {
+          if (pathname === "/app/tasks") dispatchQuickAction("new-task");
+          else router.push("/app/tasks?quick=new-task");
+        },
+      },
+      {
+        id: "quick-what-if",
+        label: "/what-if — Open the What-If simulation sandbox",
+        group: "Actions",
+        icon: Dices,
+        keywords: ["simulate", "sandbox", "scenario"],
+        onSelect: () => {
+          if (currentProjectId) {
+            document.getElementById("what-if-sandbox")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          } else {
+            router.push("/app/projects");
+          }
+        },
+      },
+      {
+        id: "quick-view-risks",
+        label: "/view-risks — Filter the risk matrix to critical severity",
+        group: "Actions",
+        icon: ShieldAlert,
+        keywords: ["critical", "high severity", "matrix"],
+        onSelect: () => {
+          if (pathname === "/app/risks") dispatchQuickAction("view-risks");
+          else router.push("/app/risks?quick=view-risks");
+        },
+      },
+      {
+        id: "quick-export-brief",
+        label: "/export-brief — Download the executive summary PDF",
+        group: "Actions",
+        icon: Download,
+        keywords: ["pdf", "download", "executive summary"],
+        onSelect: () => {
+          if (pathname === "/app/reports") dispatchQuickAction("export-brief");
+          else router.push("/app/reports?quick=export-brief");
+        },
+      },
+    ],
+    [pathname, currentProjectId, router],
+  );
+
   const allCommands = useMemo(
-    () => [...staticCommands, ...actionCommands, ...(projectCommands ?? [])],
-    [actionCommands, projectCommands],
+    () => [
+      ...staticCommands,
+      ...quickActionCommands,
+      ...actionCommands,
+      ...(projectCommands ?? []),
+      ...(taskCommands ?? []),
+      ...(resourceCommands ?? []),
+      ...(riskCommands ?? []),
+    ],
+    [quickActionCommands, actionCommands, projectCommands, taskCommands, resourceCommands, riskCommands],
   );
 
   const results = useMemo<ScoredCommand[]>(() => {

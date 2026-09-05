@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, FileText, Printer } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { downloadReportPdf } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
+import { QUICK_ACTION_EVENT, type QuickActionDetail } from "@/lib/commands";
 import type { Report, ReportType } from "@/lib/types";
 import { REPORT_TYPES } from "@/lib/types";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
@@ -30,11 +31,11 @@ export default function ReportsPage() {
   // (e.g. pdfLoading toggling) must not replay it over the same already-displayed text.
   const [justGenerated, setJustGenerated] = useState(false);
 
-  async function generate() {
+  async function generate(overrideType?: ReportType) {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.report(reportType, projectId || undefined);
+      const result = await api.report(overrideType ?? reportType, projectId || undefined);
       setReport(result);
       setJustGenerated(true);
     } catch (err) {
@@ -45,17 +46,51 @@ export default function ReportsPage() {
     }
   }
 
-  async function downloadPdf() {
+  async function downloadPdf(overrideType?: ReportType) {
     setPdfLoading(true);
     setPdfError(null);
     try {
-      await downloadReportPdf(reportType, projectId || undefined);
+      await downloadReportPdf(overrideType ?? reportType, projectId || undefined);
     } catch (err) {
       setPdfError(err instanceof ApiError ? err.message : "Failed to download the PDF.");
     } finally {
       setPdfLoading(false);
     }
   }
+
+  // Command bar's /export-brief quick action (lib/commands.ts) -- generates (if not already
+  // showing) and downloads the real executive-summary PDF, portfolio-wide (no project selected).
+  // See QUICK_ACTION_EVENT's docstring for why there are two delivery mechanisms.
+  async function exportExecutiveBrief() {
+    setReportType("executive");
+    setProjectId("");
+    await generate("executive");
+    await downloadPdf("executive");
+  }
+
+  useEffect(() => {
+    function onQuickAction(e: Event) {
+      const detail = (e as CustomEvent<QuickActionDetail>).detail;
+      if (detail?.action === "export-brief") void exportExecutiveBrief();
+    }
+    window.addEventListener(QUICK_ACTION_EVENT, onQuickAction);
+    return () => window.removeEventListener(QUICK_ACTION_EVENT, onQuickAction);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Mount-only, one-time read of a browser-only global -- see the matching comment in
+    // app/app/tasks/page.tsx's equivalent effect for why this can't be a lazy useState
+    // initializer instead.
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get("type");
+    const quick = params.get("quick");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+    if (type && REPORT_TYPES.some((r) => r.value === type)) setReportType(type as ReportType);
+    if (quick === "export-brief") void exportExecutiveBrief();
+    if (type || quick) window.history.replaceState(null, "", window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -137,14 +172,14 @@ export default function ReportsPage() {
               options={(projects.data ?? []).map((p) => ({ label: p.name, value: p.id }))}
               placeholder="Portfolio-wide (all projects)"
             />
-            <Button onClick={generate} loading={loading} disabled={loading} className="w-full">
+            <Button onClick={() => generate()} loading={loading} disabled={loading} className="w-full">
               Generate Report
             </Button>
             {report && (
               <>
                 <Button
                   variant="outline"
-                  onClick={downloadPdf}
+                  onClick={() => downloadPdf()}
                   loading={pdfLoading}
                   disabled={pdfLoading}
                   className="w-full"

@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Presentation,
   Mic,
+  Zap,
 } from "lucide-react";
 
 /** Any lucide-react icon (or compatible component) — kept narrow so this file stays a plain
@@ -61,6 +62,31 @@ export function dispatchPmoCommand(projectId: string, action: PmoCommandDetail["
   window.dispatchEvent(new CustomEvent<PmoCommandDetail>(PMO_COMMAND_EVENT, { detail: { projectId, action } }));
 }
 
+/** Custom DOM event the command bar's `/new-task`, `/view-risks`, and `/export-brief` quick
+ * actions dispatch (see CommandBar.tsx). Same "decoupled via a plain DOM event" reasoning as
+ * PMO_COMMAND_EVENT above: the command bar is mounted at the app-shell level and has no direct
+ * reference to whatever page component is (or isn't yet) mounted.
+ *
+ * Two delivery paths, both listened for by the target page (see app/app/tasks/page.tsx,
+ * app/app/risks/page.tsx, app/app/reports/page.tsx for the exact pattern):
+ *  - Already on the target page: this event fires immediately, no navigation needed.
+ *  - Elsewhere: the command instead does `router.push("<page>?quick=<action>")`; the target page
+ *    reads `?quick=` in a mount-only effect (plain `window.location.search`, not
+ *    `useSearchParams()` — these pages are statically prerendered and a Suspense-boundary
+ *    refactor isn't worth the risk for this), runs the same handler, then strips the param via
+ *    `history.replaceState` so a later refresh doesn't repeat the action. */
+export const QUICK_ACTION_EVENT = "aipcc:quick-action";
+
+export type QuickAction = "new-task" | "view-risks" | "export-brief";
+
+export interface QuickActionDetail {
+  action: QuickAction;
+}
+
+export function dispatchQuickAction(action: QuickAction) {
+  window.dispatchEvent(new CustomEvent<QuickActionDetail>(QUICK_ACTION_EVENT, { detail: { action } }));
+}
+
 /**
  * Static command registry for the global Cmd+K / Ctrl+K command bar (components/ui/CommandBar.tsx).
  *
@@ -88,6 +114,7 @@ export const commands: Command[] = [
   { id: "nav-budget", label: "Budget", href: "/app/budget", group: "Navigate", icon: Wallet, keywords: ["cost", "spend", "forecast"] },
   { id: "nav-documents", label: "Documents", href: "/app/documents", group: "Navigate", icon: FileText, keywords: ["upload", "rag", "files"] },
   { id: "nav-meetings", label: "Meetings", href: "/app/meetings", group: "Navigate", icon: Mic, keywords: ["transcript", "action items", "decisions"] },
+  { id: "nav-automations", label: "Automations", href: "/app/automations", group: "Navigate", icon: Zap, keywords: ["workflow", "rules", "triggers", "notifications"] },
   { id: "nav-analytics", label: "Analytics", href: "/app/analytics", group: "Navigate", icon: BarChart3, keywords: ["trends", "charts"] },
   { id: "nav-reports", label: "Reports", href: "/app/reports", group: "Navigate", icon: ClipboardList, keywords: ["status", "executive summary"] },
   { id: "nav-ai-assistant", label: "AI Assistant", href: "/app/ai-assistant", group: "Navigate", icon: Sparkles, keywords: ["ask", "chat", "executive brief"] },

@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, SquarePen, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { QUICK_ACTION_EVENT, type QuickActionDetail } from "@/lib/commands";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import type { Risk } from "@/lib/types";
@@ -44,6 +45,30 @@ export default function RisksPage() {
 
   const offline = risksApi.data?.offline ?? false;
   const risks = localRisks ?? risksApi.data?.data ?? EMPTY_RISKS;
+
+  // Command bar's /view-risks and per-risk deep-search entries (lib/commands.ts). See
+  // QUICK_ACTION_EVENT's docstring for why there are two delivery mechanisms.
+  useEffect(() => {
+    function onQuickAction(e: Event) {
+      const detail = (e as CustomEvent<QuickActionDetail>).detail;
+      if (detail?.action === "view-risks") setSeverity("CRITICAL");
+    }
+    window.addEventListener(QUICK_ACTION_EVENT, onQuickAction);
+    return () => window.removeEventListener(QUICK_ACTION_EVENT, onQuickAction);
+  }, []);
+
+  useEffect(() => {
+    // Mount-only, one-time read of a browser-only global -- see the matching comment in
+    // app/app/tasks/page.tsx's equivalent effect for why this can't be a lazy useState
+    // initializer instead.
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    const quick = params.get("quick");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+    if (q) setQuery(q);
+    if (quick === "view-risks") setSeverity("CRITICAL");
+    if (q || quick) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   function projectNameFor(projectId: string) {
     return projectsApi.data?.data?.find((p) => p.id === projectId)?.name;

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, DollarSign, Repeat, ShieldAlert, Sparkles, Users, Wand2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ArrowRight, DollarSign, Repeat, Search, ShieldAlert, Sparkles, Users, Wand2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { AssigneeCandidate, BalanceSuggestion } from "@/lib/types";
@@ -11,6 +11,7 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Drawer } from "@/components/ui/Drawer";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { Input } from "@/components/ui/Input";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -53,6 +54,23 @@ export default function ResourcesPage() {
   const [candidates, setCandidates] = useState<AssigneeCandidate[] | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
+
+  // Free-text filter over the main table below -- also what the command bar's per-resource
+  // deep-search entries (lib/commands.ts's CommandBar.tsx) land on via ?q=, since there's no
+  // dedicated per-resource detail route to deep-link to instead.
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    // Mount-only, one-time read of a browser-only global -- see the matching comment in
+    // app/app/tasks/page.tsx's equivalent effect for why this can't be a lazy useState
+    // initializer instead.
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    if (q) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+      setQuery(q);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const [balanceDrawerOpen, setBalanceDrawerOpen] = useState(false);
   const [balanceSuggestions, setBalanceSuggestions] = useState<BalanceSuggestion[] | null>(null);
@@ -143,6 +161,12 @@ export default function ResourcesPage() {
     () => resources.filter((r) => utilizationRatioPct(r) > OVER_ALLOCATION_THRESHOLD_PCT),
     [resources],
   );
+
+  const filteredResources = useMemo(() => {
+    if (!query.trim()) return resources;
+    const q = query.trim().toLowerCase();
+    return resources.filter((r) => r.name.toLowerCase().includes(q) || (r.role ?? "").toLowerCase().includes(q));
+  }, [resources, query]);
 
   async function openBalanceDrawer() {
     setBalanceDrawerOpen(true);
@@ -298,7 +322,24 @@ export default function ResourcesPage() {
         </CardContent>
       </Card>
 
-      <DataTable columns={columns} rows={resources} loading={resourcesApi.loading} getRowKey={(r) => r.id} emptyTitle="No resources yet" />
+      <div className="relative max-w-xs">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary" aria-hidden="true" />
+        <Input
+          placeholder="Search resources…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="pl-8"
+          aria-label="Search resources"
+        />
+      </div>
+
+      <DataTable
+        columns={columns}
+        rows={filteredResources}
+        loading={resourcesApi.loading}
+        getRowKey={(r) => r.id}
+        emptyTitle={query ? "No resources match your search" : "No resources yet"}
+      />
 
       <Drawer
         open={balanceDrawerOpen}

@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   Presentation,
   Mic,
+  Zap,
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
@@ -32,6 +33,7 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { Spinner } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CommandBar, CommandBarTrigger } from "@/components/ui/CommandBar";
+import { NotificationBell } from "@/components/ui/NotificationBell";
 import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/TelemetryDrawer";
 import { CopilotLauncher } from "@/components/ai/CopilotLauncher";
 import { PulseDot } from "@/components/ui/PulseDot";
@@ -121,6 +123,7 @@ function buildNavItems(t: (key: TranslationKey) => string): NavItem[] {
     { label: t("navAiAssistant"), href: "/app/ai-assistant", icon: <Sparkles /> },
     { label: t("navDocuments"), href: "/app/documents", icon: <FileText /> },
     { label: t("navMeetings"), href: "/app/meetings", icon: <Mic /> },
+    { label: t("navAutomations"), href: "/app/automations", icon: <Zap /> },
     { label: t("navConsulting"), href: "/app/consulting", icon: <Briefcase /> },
     { label: t("navAnalytics"), href: "/app/analytics", icon: <BarChart3 /> },
     { label: t("navReports"), href: "/app/reports", icon: <ClipboardList /> },
@@ -211,6 +214,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
               <LanguageToggle lang={lang} onChange={setLang} />
               <BrandFooter variant="compact" />
               <WorkspaceStreamStatus status={dashboardStream.status} />
+              <NotificationBell />
               <TelemetryDrawerTrigger />
               <ThemeToggle />
               <Dropdown

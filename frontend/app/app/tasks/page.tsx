@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
+import { QUICK_ACTION_EVENT, type QuickActionDetail } from "@/lib/commands";
 import { useToast } from "@/components/ui/Toast";
 import type { Task, TaskStatus } from "@/lib/types";
 import { Badge, priorityTone, taskStatusTone } from "@/components/ui/Badge";
@@ -39,6 +40,34 @@ export default function TasksPage() {
 
   const offline = tasksApi.data?.offline ?? false;
   const tasks = localTasks ?? tasksApi.data?.data ?? EMPTY_TASKS;
+
+  // Command bar's /new-task and per-task deep-search entries (lib/commands.ts) -- the immediate
+  // path (already on this page) and the ?quick=/?q= navigation path, respectively. See
+  // QUICK_ACTION_EVENT's docstring for why both delivery mechanisms exist.
+  useEffect(() => {
+    function onQuickAction(e: Event) {
+      const detail = (e as CustomEvent<QuickActionDetail>).detail;
+      if (detail?.action === "new-task") setCreateOpen(true);
+    }
+    window.addEventListener(QUICK_ACTION_EVENT, onQuickAction);
+    return () => window.removeEventListener(QUICK_ACTION_EVENT, onQuickAction);
+  }, []);
+
+  useEffect(() => {
+    // Mount-only, one-time read of a browser-only global (window.location.search) -- there is no
+    // SSR-safe way to read this outside an effect (a lazy useState initializer would run during
+    // the static prerender pass, where `window` doesn't exist, and wouldn't re-run on hydration
+    // anyway). Deliberately does NOT re-run on a same-page query-string change (see
+    // QUICK_ACTION_EVENT's docstring) -- a fresh navigation from elsewhere always remounts this
+    // page, which is the only case this needs to catch.
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    const quick = params.get("quick");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+    if (q) setQuery(q);
+    if (quick === "new-task") setCreateOpen(true);
+    if (q || quick) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   function handleCreated(task: Task, simulated: boolean) {
     setLocalTasks([task, ...tasks]);
