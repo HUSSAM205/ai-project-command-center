@@ -31,6 +31,20 @@ class RiskLevel(str, enum.Enum):
     CRITICAL = "CRITICAL"
 
 
+class RagStatus(str, enum.Enum):
+    """Canonical 4-value executive status, computed on read (see
+    app/services/rag_status.py) -- never a DB column. Not a native Postgres enum since nothing
+    ever stores one: it's a pure function of a project's already-real status/health_score/
+    risk_level, the same computed-not-stored pattern this app already uses for health_score
+    itself. Exists specifically so every view of a project (dashboard tile, PMO table, a future
+    external-tool import) can agree on one status vocabulary instead of five different ones."""
+
+    ON_TRACK = "ON_TRACK"
+    AT_RISK = "AT_RISK"
+    CRITICAL = "CRITICAL"
+    COMPLETED = "COMPLETED"
+
+
 class TaskStatus(str, enum.Enum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"

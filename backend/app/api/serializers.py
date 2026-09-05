@@ -11,6 +11,7 @@ from app.schemas.resource import ResourceOut
 from app.schemas.risk import RiskOut
 from app.services.health_score import compute_health_score
 from app.services.opportunity_scoring import compute_opportunity_score
+from app.services.rag_status import compute_rag_status
 
 
 def derive_risk_severity(score: int) -> RiskSeverity:
@@ -123,6 +124,7 @@ def serialize_project(project: Project, tasks, risks, overloaded_count: int) -> 
         progress=project.progress,
         health_score=result.health_score,
         risk_level=result.risk_level,
+        rag_status=compute_rag_status(project.status, result.health_score, result.risk_level),
         created_at=project.created_at,
         updated_at=project.updated_at,
     )

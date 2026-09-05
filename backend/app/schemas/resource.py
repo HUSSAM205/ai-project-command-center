@@ -57,3 +57,20 @@ class ResourceAllocationOut(BaseModel):
     allocation_percent: int
     start_date: date | None
     end_date: date | None
+
+
+class ResourceMatrixCellOut(BaseModel):
+    project_id: UUID
+    project_name: str
+    allocation_percent: int
+    is_single_point_of_failure: bool
+
+
+class ResourceMatrixRowOut(BaseModel):
+    resource_id: UUID
+    resource_name: str
+    role: str | None
+    utilization_state: UtilizationState
+    workload_hours: float
+    capacity_hours: float
+    allocations: list[ResourceMatrixCellOut]

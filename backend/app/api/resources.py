@@ -14,11 +14,12 @@ from app.schemas.resource import (
     ResourceAllocationCreate,
     ResourceAllocationOut,
     ResourceCreate,
+    ResourceMatrixRowOut,
     ResourceOut,
     ResourceUpdate,
 )
 from app.services.common import compute_resource_workload, compute_utilization_state
-from app.services.resource_state import compute_all_resource_states
+from app.services.resource_state import compute_all_resource_states, compute_resource_project_matrix
 
 router = APIRouter(prefix="/api/v1", tags=["resources"])
 
@@ -31,6 +32,39 @@ def list_all_resources(
     states = compute_all_resource_states(db, principal.organization_id)
     return [
         serialize_resource(r, *states.get(r.id, (0.0, UtilizationState.UNDERUTILIZED))) for r in resources
+    ]
+
+
+@router.get("/resources/matrix", response_model=list[ResourceMatrixRowOut])
+def get_resource_project_matrix(
+    principal: CurrentPrincipal = Depends(get_current_principal), db: Session = Depends(get_db)
+) -> list[ResourceMatrixRowOut]:
+    """Cross-project resource x allocation grid with single-point-of-failure flagging — see
+    app/services/resource_state.py's compute_resource_project_matrix for the real, computed
+    definition of both overallocation and SPOF. Declared before /resources/{resource_id}-shaped
+    routes would be (there are none in this router today, but this ordering note protects future
+    additions) since FastAPI matches path routes in declaration order and "matrix" would
+    otherwise be captured as a :resource_id path parameter."""
+    rows = compute_resource_project_matrix(db, principal.organization_id)
+    return [
+        ResourceMatrixRowOut(
+            resource_id=row.resource_id,
+            resource_name=row.resource_name,
+            role=row.role,
+            utilization_state=row.utilization_state,
+            workload_hours=row.workload_hours,
+            capacity_hours=row.capacity_hours,
+            allocations=[
+                {
+                    "project_id": c.project_id,
+                    "project_name": c.project_name,
+                    "allocation_percent": c.allocation_percent,
+                    "is_single_point_of_failure": c.is_single_point_of_failure,
+                }
+                for c in row.allocations
+            ],
+        )
+        for row in rows
     ]
 
 

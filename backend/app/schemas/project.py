@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import Priority, ProjectStatus, RiskLevel
+from app.models.enums import Priority, ProjectStatus, RagStatus, RiskLevel
 from app.schemas.common import MoneyField
 
 
@@ -55,6 +55,7 @@ class ProjectOut(BaseModel):
     progress: int
     health_score: int
     risk_level: RiskLevel
+    rag_status: RagStatus
     created_at: datetime
     updated_at: datetime
 
@@ -88,3 +89,16 @@ class CostForecastOut(BaseModel):
     method: str
     cpi: float | None
     earned_value: float | None
+
+
+class MonteCarloForecastOut(BaseModel):
+    project_id: UUID
+    p50_date: date
+    p85_date: date
+    p95_date: date
+    remaining_task_count: int
+    remaining_hours_estimate: float
+    weekly_capacity_hours: float
+    historical_sample_size: int
+    method: str
+    runs: int

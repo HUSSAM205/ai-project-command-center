@@ -14,10 +14,18 @@ from app.repositories.risks import list_risks_for_project
 from app.repositories.tasks import list_tasks_for_project
 from app.models.project import Project
 from app.schemas.ai import AIResponse
-from app.schemas.project import CostForecastOut, HealthScoreOut, ProjectCreate, ProjectOut, ProjectUpdate
+from app.schemas.project import (
+    CostForecastOut,
+    HealthScoreOut,
+    MonteCarloForecastOut,
+    ProjectCreate,
+    ProjectOut,
+    ProjectUpdate,
+)
 from app.services.audit import log_audit_event
 from app.services.cost_forecast import compute_cost_forecast
 from app.services.health_score import compute_health_score
+from app.services.monte_carlo import compute_monte_carlo_forecast
 from app.services.resource_state import compute_all_resource_states, count_overloaded_resources_for_project
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
@@ -168,6 +176,34 @@ def get_project_forecast(
         method=result.method,
         cpi=result.cpi,
         earned_value=result.earned_value,
+    )
+
+
+@router.get("/{project_id}/forecast/monte-carlo", response_model=MonteCarloForecastOut)
+def get_project_monte_carlo_forecast(
+    project_id: UUID,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> MonteCarloForecastOut:
+    """1,000-run Monte Carlo delivery forecast — P50/P85/P95 completion dates from bootstrap-
+    resampling this org's own historical task estimate accuracy. See
+    app/services/monte_carlo.py's module docstring for the full method. A plain `def` route (like
+    every other CPU-bound endpoint in this file) so FastAPI runs it in its worker threadpool
+    rather than on the event loop -- 1,000 runs of simple arithmetic is fast, but this keeps the
+    same off-event-loop guarantee the rest of this file already relies on."""
+    project = _get_project_or_404(db, principal.organization_id, project_id)
+    result = compute_monte_carlo_forecast(db, principal.organization_id, project)
+    return MonteCarloForecastOut(
+        project_id=project.id,
+        p50_date=result.p50_date,
+        p85_date=result.p85_date,
+        p95_date=result.p95_date,
+        remaining_task_count=result.remaining_task_count,
+        remaining_hours_estimate=result.remaining_hours_estimate,
+        weekly_capacity_hours=result.weekly_capacity_hours,
+        historical_sample_size=result.historical_sample_size,
+        method=result.method,
+        runs=result.runs,
     )
 
 
