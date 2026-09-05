@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, FileSearch, Link2, Lock, ShieldCheck } from "lucide-react";
+import { Download, Eye, FileSearch, Link2, Lock, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { downloadAuditCsv } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
 import { useLanguage } from "@/lib/i18n";
 import { useToast } from "@/components/ui/Toast";
 import type { AuditLogEntry } from "@/lib/types";
@@ -29,9 +30,27 @@ function actionTone(action: string): SemanticTone {
   return "neutral";
 }
 
+// A public/read-only viewer's actor_email and ip_address always come back null from the API
+// (see backend/app/api/audit.py's redaction) -- but a genuinely system/anonymous-triggered event
+// (no real actor_user_id at all) also has a null actor_email. This distinguishes the two rather
+// than collapsing both into the same "System / anonymous" label, which would misrepresent a real
+// action by a real actor as if no one had done it.
+function actorLabel(e: AuditLogEntry, isPublicView: boolean): string {
+  if (e.actor_email) return e.actor_email;
+  if (isPublicView && e.actor_user_id) return "Hidden in public view";
+  return "System / anonymous";
+}
+
+function ipLabel(e: AuditLogEntry, isPublicView: boolean): string | null {
+  if (e.ip_address) return e.ip_address;
+  if (isPublicView && e.actor_user_id) return "Hidden in public view";
+  return null;
+}
+
 export default function GovernancePage() {
   const { t } = useLanguage();
   const { push } = useToast();
+  const { isDemo } = useAuth();
 
   const [page, setPage] = useState(1);
   const [action, setAction] = useState("");
@@ -82,12 +101,15 @@ export default function GovernancePage() {
     {
       key: "actor",
       header: "Actor",
-      render: (e) => (
-        <div>
-          <p className="text-sm text-text-primary">{e.actor_email ?? "System / anonymous"}</p>
-          {e.ip_address && <p className="font-tabular text-[11px] text-text-tertiary">{e.ip_address}</p>}
-        </div>
-      ),
+      render: (e) => {
+        const ip = ipLabel(e, isDemo);
+        return (
+          <div>
+            <p className="text-sm text-text-primary">{actorLabel(e, isDemo)}</p>
+            {ip && <p className="font-tabular text-[11px] text-text-tertiary">{ip}</p>}
+          </div>
+        );
+      },
     },
     {
       key: "action",
@@ -137,6 +159,15 @@ export default function GovernancePage() {
 
   return (
     <div className="space-y-6">
+      {isDemo && (
+        <div className="flex items-center gap-2 rounded-full border border-info-border bg-info-bg px-4 py-2 text-xs font-medium text-info-fg">
+          <Eye className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          Public Evaluation Mode (Read-Only) — full compliance &amp; audit data visible for portfolio
+          review. Real actor emails and IP addresses are hidden here; sign in with a full account to
+          see them.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-text-primary">{t("pageGovernanceTitle")}</h1>
@@ -328,11 +359,11 @@ export default function GovernancePage() {
                 {inspecting.entity_type} {inspecting.entity_id ?? ""}
               </dd>
               <dt className="text-text-tertiary">Actor</dt>
-              <dd className="text-text-primary">{inspecting.actor_email ?? inspecting.actor_user_id ?? "system / anonymous"}</dd>
+              <dd className="text-text-primary">{actorLabel(inspecting, isDemo)}</dd>
               <dt className="text-text-tertiary">Session</dt>
               <dd className="font-tabular text-text-primary">{inspecting.session_id ?? "—"}</dd>
               <dt className="text-text-tertiary">IP address</dt>
-              <dd className="font-tabular text-text-primary">{inspecting.ip_address ?? "—"}</dd>
+              <dd className="font-tabular text-text-primary">{ipLabel(inspecting, isDemo) ?? "—"}</dd>
               <dt className="text-text-tertiary">Timestamp</dt>
               <dd className="font-tabular text-text-primary">{formatDate(inspecting.created_at)}</dd>
               <dt className="text-text-tertiary">Record hash</dt>

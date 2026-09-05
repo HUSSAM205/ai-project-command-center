@@ -124,6 +124,18 @@ def require_role(*roles: str) -> Callable[[CurrentPrincipal], CurrentPrincipal]:
     return _dependency
 
 
+def has_permission(db: Session, role: str, permission_key: str) -> bool:
+    """Non-raising version of the same `permissions`/`role_permissions` check
+    `require_permission` enforces -- for callers that need to know WHETHER a principal is
+    privileged (e.g. to redact a field for everyone else) rather than reject them outright."""
+    granted = db.scalar(
+        select(RolePermission.id)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .where(RolePermission.role == role, Permission.key == permission_key)
+    )
+    return granted is not None
+
+
 def require_permission(permission_key: str) -> Callable[[CurrentPrincipal, Session], CurrentPrincipal]:
     """Guard backed by the `permissions`/`role_permissions` tables (see app/models/role.py):
     the caller's role must actually have `permission_key` granted in the database, not just
@@ -137,12 +149,7 @@ def require_permission(permission_key: str) -> Callable[[CurrentPrincipal, Sessi
         principal: CurrentPrincipal = Depends(get_current_principal),
         db: Session = Depends(get_db),
     ) -> CurrentPrincipal:
-        granted = db.scalar(
-            select(RolePermission.id)
-            .join(Permission, Permission.id == RolePermission.permission_id)
-            .where(RolePermission.role == principal.role, Permission.key == permission_key)
-        )
-        if granted is None:
+        if not has_permission(db, principal.role, permission_key):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permissions")
         return principal
 
