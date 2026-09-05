@@ -55,7 +55,7 @@ export const PMO_COMMAND_EVENT = "aipcc:pmo-command";
 
 export interface PmoCommandDetail {
   projectId: string;
-  action: "memo" | "montecarlo";
+  action: "memo" | "montecarlo" | "whatif";
 }
 
 export function dispatchPmoCommand(projectId: string, action: PmoCommandDetail["action"]) {

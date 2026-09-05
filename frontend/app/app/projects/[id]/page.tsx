@@ -309,17 +309,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // re-triggers the consuming card's effect even though the string value didn't change.
   const [activeTab, setActiveTab] = useState("overview");
   const [pmoAutoAction, setPmoAutoAction] = useState<{ action: PmoCommandDetail["action"]; nonce: number } | null>(null);
+  // Command bar's /what-if quick action (lib/commands.ts) reuses this same PMO_COMMAND_EVENT
+  // channel to switch to the PMO tab (where WhatIfCard actually lives) -- but unlike memo/
+  // montecarlo, it doesn't need pmoAutoAction (nothing to auto-fire, just scroll once the tab's
+  // real content has actually mounted).
+  const [pendingScrollToWhatIf, setPendingScrollToWhatIf] = useState(false);
 
   useEffect(() => {
     function onPmoCommand(e: Event) {
       const detail = (e as CustomEvent<PmoCommandDetail>).detail;
       if (!detail || detail.projectId !== id) return;
       setActiveTab("pmo");
-      setPmoAutoAction({ action: detail.action, nonce: Date.now() });
+      if (detail.action === "whatif") {
+        setPendingScrollToWhatIf(true);
+      } else {
+        setPmoAutoAction({ action: detail.action, nonce: Date.now() });
+      }
     }
     window.addEventListener(PMO_COMMAND_EVENT, onPmoCommand);
     return () => window.removeEventListener(PMO_COMMAND_EVENT, onPmoCommand);
   }, [id]);
+
+  useEffect(() => {
+    if (activeTab !== "pmo" || !pendingScrollToWhatIf) return;
+    // requestAnimationFrame, not a plain synchronous call: the PMO tab's content (including
+    // WhatIfCard's #what-if-sandbox) only mounts after this render commits, so the element
+    // doesn't exist yet in the same tick setActiveTab("pmo") ran.
+    const raf = requestAnimationFrame(() => {
+      document.getElementById("what-if-sandbox")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setPendingScrollToWhatIf(false);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeTab, pendingScrollToWhatIf]);
 
   if (project.loading) {
     return (

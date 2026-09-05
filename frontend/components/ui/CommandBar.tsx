@@ -275,7 +275,10 @@ export function CommandBar() {
         keywords: ["simulate", "sandbox", "scenario"],
         onSelect: () => {
           if (currentProjectId) {
-            document.getElementById("what-if-sandbox")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            // WhatIfCard's #what-if-sandbox lives inside the project page's PMO tab, which only
+            // mounts its content when active -- same PMO_COMMAND_EVENT channel the boardroom-memo/
+            // Monte Carlo actions already use to switch tabs, see app/app/projects/[id]/page.tsx.
+            dispatchPmoCommand(currentProjectId, "whatif");
           } else {
             router.push("/app/projects");
           }
