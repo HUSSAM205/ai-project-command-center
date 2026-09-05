@@ -365,6 +365,37 @@ export interface DocumentCitation {
   excerpt: string;
 }
 
+// Meeting Intelligence (Phase 4) -- backend/app/services/meeting_extraction.py (Demo AI, no LLM
+// call) or backend/app/ai/prompts/meeting_intelligence.py (live provider JSON mode). Any field a
+// live/heuristic parser couldn't confidently detect is null, never guessed.
+export interface MeetingActionItem {
+  title: string;
+  description?: string | null;
+  owner_name: string | null;
+  priority: Priority;
+  due_date: string | null;
+  estimated_hours: number | null;
+  source_line?: string;
+}
+
+export interface MeetingRisk {
+  description: string;
+  category: RiskCategory;
+}
+
+export interface MeetingParseData {
+  decisions: string[];
+  action_items: MeetingActionItem[];
+  risks_identified: MeetingRisk[];
+}
+
+export interface MeetingCommitResponse {
+  created_tasks: Task[];
+  // owner_name values that couldn't be matched to exactly one real Resource in this org -- those
+  // tasks were created unassigned, not guessed.
+  unresolved_owners: string[];
+}
+
 // Analytics (Phase 6) — mirrors backend app/schemas/analytics.py.
 export interface BudgetBurnPoint {
   date: string;

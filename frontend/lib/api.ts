@@ -21,6 +21,8 @@ import type {
   FeedbackEntry,
   FeedbackPage,
   HealthBreakdown,
+  MeetingActionItem,
+  MeetingCommitResponse,
   Milestone,
   MonteCarloForecast,
   Project,
@@ -340,6 +342,25 @@ export const api = {
   uploadDocument: (file: File, projectId?: string) => uploadDocumentRequest(file, projectId),
   askDocument: (id: string, question: string) =>
     request<AIResponse>(`/documents/${id}/ask`, { method: "POST", body: { question } }),
+
+  // Meeting Intelligence (Phase 4)
+  parseMeetingTranscript: (transcript: string) =>
+    request<AIResponse>("/meetings/parse-transcript", { method: "POST", body: { transcript } }),
+  commitMeetingTasks: (projectId: string, actionItems: MeetingActionItem[]) =>
+    request<MeetingCommitResponse>("/meetings/commit-tasks", {
+      method: "POST",
+      body: {
+        project_id: projectId,
+        action_items: actionItems.map((item) => ({
+          title: item.title,
+          description: item.description ?? null,
+          owner_name: item.owner_name,
+          priority: item.priority,
+          due_date: item.due_date,
+          estimated_hours: item.estimated_hours,
+        })),
+      },
+    }),
 
   // Analytics & Reports (Phase 6)
   analytics: () => request<AnalyticsSummary>("/analytics"),

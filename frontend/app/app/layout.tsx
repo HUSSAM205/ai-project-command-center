@@ -21,6 +21,7 @@ import {
   Cpu,
   ClipboardCheck,
   Presentation,
+  Mic,
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
@@ -119,6 +120,7 @@ function buildNavItems(t: (key: TranslationKey) => string): NavItem[] {
     { label: t("navBudget"), href: "/app/budget", icon: <Wallet /> },
     { label: t("navAiAssistant"), href: "/app/ai-assistant", icon: <Sparkles /> },
     { label: t("navDocuments"), href: "/app/documents", icon: <FileText /> },
+    { label: t("navMeetings"), href: "/app/meetings", icon: <Mic /> },
     { label: t("navConsulting"), href: "/app/consulting", icon: <Briefcase /> },
     { label: t("navAnalytics"), href: "/app/analytics", icon: <BarChart3 /> },
     { label: t("navReports"), href: "/app/reports", icon: <ClipboardList /> },
