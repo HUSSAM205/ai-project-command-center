@@ -9,6 +9,7 @@ import { softSpring } from "@/lib/motion";
 import { api } from "@/lib/api";
 import { commands as staticCommands, dispatchPmoCommand, dispatchQuickAction, type Command } from "@/lib/commands";
 import { bestFuzzyScore } from "@/lib/fuzzy";
+import { useLanguage } from "@/lib/i18n";
 
 const OPEN_EVENT = "aipcc:open-command-bar";
 
@@ -18,6 +19,7 @@ const OPEN_EVENT = "aipcc:open-command-bar";
  * state through the app shell.
  */
 export function CommandBarTrigger({ className }: { className?: string }) {
+  const { t } = useLanguage();
   return (
     <button
       type="button"
@@ -28,8 +30,8 @@ export function CommandBarTrigger({ className }: { className?: string }) {
       )}
     >
       <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="hidden truncate sm:inline">Search or jump to…</span>
-      <kbd className="ml-auto hidden shrink-0 items-center gap-0.5 rounded border border-border-default bg-subtle px-1 font-mono text-[10px] text-text-tertiary sm:flex">
+      <span className="hidden truncate sm:inline">{t("commandBarPlaceholder")}</span>
+      <kbd className="ms-auto hidden shrink-0 items-center gap-0.5 rounded border border-border-default bg-subtle px-1 font-mono text-[10px] text-text-tertiary sm:flex">
         <span aria-hidden="true">⌘</span>K
       </kbd>
     </button>
@@ -46,6 +48,7 @@ interface ScoredCommand extends Command {
  * the current org's projects (so "jump to <project name>" works), and navigates on select.
  */
 export function CommandBar() {
+  const { t } = useLanguage();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -402,8 +405,8 @@ export function CommandBar() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="Search commands and projects…"
-                aria-label="Command palette search"
+                placeholder={t("commandBarSearchPlaceholder")}
+                aria-label={t("commandBarSearchPlaceholder")}
                 className="h-12 w-full bg-transparent text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
               />
               <kbd className="hidden shrink-0 rounded border border-border-default px-1.5 py-0.5 font-mono text-[10px] text-text-tertiary sm:block">

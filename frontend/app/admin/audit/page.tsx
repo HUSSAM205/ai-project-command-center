@@ -30,7 +30,7 @@ const columns: Column<AuditLogEntry>[] = [
     render: (e) => (
       <span className="text-text-secondary">
         {e.entity_type}
-        {e.entity_id && <span className="ml-1 font-tabular text-xs text-text-tertiary">{e.entity_id.slice(0, 8)}…</span>}
+        {e.entity_id && <span className="ms-1 font-tabular text-xs text-text-tertiary">{e.entity_id.slice(0, 8)}…</span>}
       </span>
     ),
   },

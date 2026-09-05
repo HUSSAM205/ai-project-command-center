@@ -166,3 +166,49 @@ export async function downloadReportPdf(reportType: string, projectId?: string):
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/** Downloads the real, streamed CSV audit trail (GET /audit/export) -- same auth-header-then-
+ * object-URL pattern as downloadReportPdf above, since a plain <a href> can't carry an
+ * Authorization header. Every row in the file is an actual audit_logs record; this call itself is
+ * also audited server-side (action="audit.export"). */
+export async function downloadAuditCsv(
+  params: { action?: string; resourceType?: string; dateFrom?: string; dateTo?: string } = {},
+): Promise<void> {
+  const q = new URLSearchParams();
+  if (params.action) q.set("action", params.action);
+  if (params.resourceType) q.set("resource_type", params.resourceType);
+  if (params.dateFrom) q.set("date_from", params.dateFrom);
+  if (params.dateTo) q.set("date_to", params.dateTo);
+  const path = `/audit/export${q.toString() ? `?${q.toString()}` : ""}`;
+
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers });
+  } catch {
+    throw new ApiError("Could not reach the API. The backend may be offline.", 0);
+  }
+  if (!res.ok) {
+    let message = `CSV export failed (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data?.detail || data?.message || message;
+    } catch {
+      // ignore
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

@@ -7,6 +7,7 @@ import type {
   AIUsage,
   AnalyticsSummary,
   AssigneeCandidate,
+  AuditHealth,
   AuditLogPage,
   AuthResponse,
   AutomationLog,
@@ -410,6 +411,25 @@ export const api = {
       q.set("page_size", String(params.pageSize ?? 25));
       return request<FeedbackPage>(`/admin/feedback?${q.toString()}`);
     },
+  },
+
+  // Governance & Compliance -- same admin.access gate as the admin panel above, a richer read
+  // surface over the SAME audit_logs table (date-range filtering, CSV export, hash-chain health),
+  // not a second/competing audit pipeline.
+  audit: {
+    logs: (
+      params: { page?: number; pageSize?: number; action?: string; resourceType?: string; dateFrom?: string; dateTo?: string } = {},
+    ) => {
+      const q = new URLSearchParams();
+      q.set("page", String(params.page ?? 1));
+      q.set("page_size", String(params.pageSize ?? 25));
+      if (params.action) q.set("action", params.action);
+      if (params.resourceType) q.set("resource_type", params.resourceType);
+      if (params.dateFrom) q.set("date_from", params.dateFrom);
+      if (params.dateTo) q.set("date_to", params.dateTo);
+      return request<AuditLogPage>(`/audit/logs?${q.toString()}`);
+    },
+    health: () => request<AuditHealth>("/audit/health"),
   },
 
   // AI Consulting Workspace (Phase 4)

@@ -23,6 +23,8 @@ import {
   Presentation,
   Mic,
   Zap,
+  Languages,
+  Landmark,
 } from "lucide-react";
 import { Sidebar, type NavItem } from "@/components/ui/Sidebar";
 import { Topbar } from "@/components/ui/Topbar";
@@ -72,37 +74,33 @@ function WorkspaceStreamStatus({ status }: { status: StreamStatus }) {
   );
 }
 
-// Scoped bilingual support (see lib/i18n.tsx): switches the sidebar nav, this subtitle, and each
-// module's page title between English and Arabic, and flips `dir`/`lang` on <html>. Table headers,
-// forms, and body copy stay English either way — a real translation of those, kept terminology-
-// consistent, is a separate effort from this toggle.
+// Trilingual support (see lib/i18n.tsx): switches the sidebar nav, this subtitle, each module's
+// page title, and the command bar/copilot chrome between English, Arabic, and Turkish, and flips
+// `dir`/`lang` on <html> (Arabic only — Turkish is LTR like English). Table headers, forms, and
+// general body copy stay English in all three — a real translation of those, kept terminology-
+// consistent, is a separate effort from this switcher. A real interactive dropdown (not a plain
+// toggle) since there are 3 languages now, not 2 — reuses the same Dropdown primitive the user
+// avatar menu already uses.
 function LanguageToggle({ lang, onChange }: { lang: Lang; onChange: (lang: Lang) => void }) {
+  const { t } = useLanguage();
+  const LANG_LABEL: Record<Lang, string> = { en: "EN", ar: "AR", tr: "TR" };
   return (
-    <div role="group" aria-label="Language" className="hidden items-center gap-0.5 rounded-full border border-border-default bg-subtle p-0.5 text-xs font-medium sm:flex">
-      <button
-        type="button"
-        onClick={() => onChange("en")}
-        aria-pressed={lang === "en"}
-        className={cn(
-          "rounded-full px-2.5 py-1 transition-colors",
-          lang === "en" ? "bg-brand-700 text-white dark:bg-brand-500" : "text-text-tertiary hover:text-text-primary",
-        )}
-      >
-        EN
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("ar")}
-        aria-pressed={lang === "ar"}
-        dir="rtl"
-        className={cn(
-          "rounded-full px-2.5 py-1 transition-colors",
-          lang === "ar" ? "bg-brand-700 text-white dark:bg-brand-500" : "text-text-tertiary hover:text-text-primary",
-        )}
-      >
-        العربية
-      </button>
-    </div>
+    <Dropdown
+      trigger={
+        <span
+          aria-label={t("languageSwitcherLabel")}
+          className="flex h-8 items-center gap-1.5 rounded-md border border-border-default bg-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-border-strong hover:text-text-primary"
+        >
+          <Languages className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden sm:inline">{LANG_LABEL[lang]}</span>
+        </span>
+      }
+      items={[
+        { label: t("languageEnglish"), onSelect: () => onChange("en") },
+        { label: t("languageArabic"), onSelect: () => onChange("ar") },
+        { label: t("languageTurkish"), onSelect: () => onChange("tr") },
+      ]}
+    />
   );
 }
 
@@ -124,6 +122,7 @@ function buildNavItems(t: (key: TranslationKey) => string): NavItem[] {
     { label: t("navDocuments"), href: "/app/documents", icon: <FileText /> },
     { label: t("navMeetings"), href: "/app/meetings", icon: <Mic /> },
     { label: t("navAutomations"), href: "/app/automations", icon: <Zap /> },
+    { label: t("navGovernance"), href: "/app/governance", icon: <Landmark /> },
     { label: t("navConsulting"), href: "/app/consulting", icon: <Briefcase /> },
     { label: t("navAnalytics"), href: "/app/analytics", icon: <BarChart3 /> },
     { label: t("navReports"), href: "/app/reports", icon: <ClipboardList /> },

@@ -563,6 +563,14 @@ export interface AuditLogEntry {
   entity_type: string;
   entity_id: string | null;
   event_metadata: Record<string, unknown>;
+  // Governance/compliance additions -- null on any row that predates this feature or whose
+  // originating endpoint hasn't been retrofitted with request/email capture yet (see backend
+  // app/services/audit.py::log_audit_event) -- an honest gap, never a fabricated value.
+  session_id: string | null;
+  actor_email: string | null;
+  ip_address: string | null;
+  record_hash: string | null;
+  prev_hash: string | null;
   created_at: string;
 }
 
@@ -571,6 +579,23 @@ export interface AuditLogPage {
   total: number;
   page: number;
   page_size: number;
+}
+
+// GET /api/v1/audit/health -- every field is a real, freshly-computed value (a live hash-chain
+// re-verification for chain_status, a real row count), never a hardcoded "all green" status.
+export interface AuditHealth {
+  tenant_isolation_status: string;
+  tenant_isolation_detail: string;
+  transport_encryption_status: string;
+  transport_encryption_detail: string;
+  storage_encryption_status: string;
+  storage_encryption_detail: string;
+  chain_status: string;
+  chain_records_verified: number;
+  chain_total_hash_chained: number;
+  chain_broken_at_id: string | null;
+  chain_broken_reason: string | null;
+  total_audit_records: number;
 }
 
 export interface FeedbackEntry {

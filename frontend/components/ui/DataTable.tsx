@@ -90,7 +90,12 @@ export function DataTable<T>({
                 style={{ width: col.width }}
                 className={cn(
                   "px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-text-tertiary",
-                  col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
+                  // Logical properties (text-end/text-start, not text-right/text-left): under
+                  // dir="rtl" a "right"-aligned numeric/action column should sit at the reading
+                  // end (visually the left), not stay pinned to the physical right — this is the
+                  // one shared DataTable every list/table page in the app renders through, so
+                  // fixing it here fixes every one of them consistently.
+                  col.align === "right" ? "text-end" : col.align === "center" ? "text-center" : "text-start",
                 )}
               >
                 {col.sortValue ? (
@@ -131,7 +136,12 @@ export function DataTable<T>({
                   key={col.key}
                   className={cn(
                     "px-4 py-3 text-text-primary",
-                    col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
+                    // Logical properties (text-end/text-start, not text-right/text-left): under
+                  // dir="rtl" a "right"-aligned numeric/action column should sit at the reading
+                  // end (visually the left), not stay pinned to the physical right — this is the
+                  // one shared DataTable every list/table page in the app renders through, so
+                  // fixing it here fixes every one of them consistently.
+                  col.align === "right" ? "text-end" : col.align === "center" ? "text-center" : "text-start",
                   )}
                 >
                   {col.render(row)}

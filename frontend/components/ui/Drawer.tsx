@@ -50,15 +50,20 @@ export function Drawer({
       />
       {/* Genuine glass-surface treatment (see .glass-surface in globals.css) — this panel floats
           directly over the blurred backdrop above, so translucency has something real to show
-          through rather than being applied decoratively. */}
+          through rather than being applied decoratively.
+
+          RTL: `end-0`/`border-s` (not `right-0`/`border-l`) so this docks to the correct physical
+          edge under dir="rtl" (lib/i18n.tsx) -- and the closed-state transform must flip too,
+          since "off-screen" is now off the LEFT edge, not the right. Zero change in the default
+          LTR (English/Turkish) rendering. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="drawer-title"
         className={cn(
-          "glass-surface absolute right-0 top-0 flex h-full w-full flex-col border-l shadow-elevation-3 transition-transform duration-200",
+          "glass-surface absolute end-0 top-0 flex h-full w-full flex-col border-s shadow-elevation-3 transition-transform duration-200",
           widthClass,
-          open ? "translate-x-0" : "translate-x-full",
+          open ? "translate-x-0" : "translate-x-full rtl:-translate-x-full",
         )}
       >
         <div className="flex items-center justify-between border-b border-border-default px-5 py-4">
