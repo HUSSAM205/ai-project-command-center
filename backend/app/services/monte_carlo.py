@@ -76,13 +76,38 @@ def _remaining_hours(task: Task) -> float:
     return max(0.0, estimated * (1 - fraction_done))
 
 
-def compute_monte_carlo_forecast(
-    db: Session,
-    organization_id: UUID,
-    project: Project,
+def _run_simulation(
+    base_remaining_hours: list[float],
+    historical: list[float],
+    weekly_capacity: float,
+    today: date,
     *,
-    seed: int | None = None,
-) -> MonteCarloForecast:
+    seed: int | None,
+) -> tuple[date, date, date]:
+    """The actual Monte Carlo loop, factored out so app/services/whatif.py's scenario engine can
+    run the exact same math against a modified `base_remaining_hours` list -- a what-if
+    recalculation must never drift from the real forecast's formula, only its inputs."""
+    rng = random.Random(seed)
+    completion_offset_days: list[float] = []
+    for _ in range(SIMULATION_RUNS):
+        simulated_hours = sum(h * _sample_ratio(historical, rng) for h in base_remaining_hours)
+        weeks_needed = simulated_hours / weekly_capacity
+        completion_offset_days.append(weeks_needed * 7)
+    completion_offset_days.sort()
+
+    def percentile_date(p: float) -> date:
+        idx = min(len(completion_offset_days) - 1, int(p * len(completion_offset_days)))
+        return today + timedelta(days=completion_offset_days[idx])
+
+    return percentile_date(0.50), percentile_date(0.85), percentile_date(0.95)
+
+
+def _gather_inputs(
+    db: Session, organization_id: UUID, project: Project
+) -> tuple[list[float], list[float], float, int]:
+    """Real historical ratios, real per-task remaining hours, and real weekly capacity for
+    `project` -- the shared, DB-backed inputs both compute_monte_carlo_forecast and
+    app/services/whatif.py's scenario engine start from."""
     org_tasks = list_all_tasks_for_org(db, organization_id)
     historical = _historical_ratios(org_tasks)
 
@@ -97,9 +122,31 @@ def compute_monte_carlo_forecast(
     if weekly_capacity <= 0:
         weekly_capacity = DEFAULT_WEEKLY_CAPACITY_HOURS
 
+    return base_remaining_hours, historical, weekly_capacity, len(remaining)
+
+
+def _describe_method(historical_sample_size: int) -> str:
+    return (
+        f"bootstrap resampling from {historical_sample_size} completed org tasks' actual/estimated-hours ratio"
+        if historical_sample_size >= MIN_HISTORICAL_SAMPLES
+        else f"only {historical_sample_size} completed tasks with hour data org-wide — using a disclosed "
+        f"industry-baseline estimation-variance assumption (mean {FALLBACK_RATIO_MEAN}x) instead of real history"
+    )
+
+
+def compute_monte_carlo_forecast(
+    db: Session,
+    organization_id: UUID,
+    project: Project,
+    *,
+    seed: int | None = None,
+) -> MonteCarloForecast:
+    base_remaining_hours, historical, weekly_capacity, remaining_count = _gather_inputs(
+        db, organization_id, project
+    )
     today = date.today()
 
-    if not remaining:
+    if remaining_count == 0:
         return MonteCarloForecast(
             project_id=str(project.id),
             p50_date=today,
@@ -113,34 +160,17 @@ def compute_monte_carlo_forecast(
             runs=0,
         )
 
-    rng = random.Random(seed)
-    completion_offset_days: list[float] = []
-    for _ in range(SIMULATION_RUNS):
-        simulated_hours = sum(h * _sample_ratio(historical, rng) for h in base_remaining_hours)
-        weeks_needed = simulated_hours / weekly_capacity
-        completion_offset_days.append(weeks_needed * 7)
-    completion_offset_days.sort()
-
-    def percentile_date(p: float) -> date:
-        idx = min(len(completion_offset_days) - 1, int(p * len(completion_offset_days)))
-        return today + timedelta(days=completion_offset_days[idx])
-
-    method = (
-        f"bootstrap resampling from {len(historical)} completed org tasks' actual/estimated-hours ratio"
-        if len(historical) >= MIN_HISTORICAL_SAMPLES
-        else f"only {len(historical)} completed tasks with hour data org-wide — using a disclosed "
-        f"industry-baseline estimation-variance assumption (mean {FALLBACK_RATIO_MEAN}x) instead of real history"
-    )
+    p50, p85, p95 = _run_simulation(base_remaining_hours, historical, weekly_capacity, today, seed=seed)
 
     return MonteCarloForecast(
         project_id=str(project.id),
-        p50_date=percentile_date(0.50),
-        p85_date=percentile_date(0.85),
-        p95_date=percentile_date(0.95),
-        remaining_task_count=len(remaining),
+        p50_date=p50,
+        p85_date=p85,
+        p95_date=p95,
+        remaining_task_count=remaining_count,
         remaining_hours_estimate=round(sum(base_remaining_hours), 1),
         weekly_capacity_hours=round(weekly_capacity, 1),
         historical_sample_size=len(historical),
-        method=method,
+        method=_describe_method(len(historical)),
         runs=SIMULATION_RUNS,
     )

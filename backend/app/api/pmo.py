@@ -44,12 +44,17 @@ from app.schemas.pmo import (
     StageGateOut,
     StageGateUpdate,
     TradeOffOptionOut,
+    WhatIfRequest,
+    WhatIfResultOut,
+    WhatIfScenarioOut,
 )
+from app.schemas.project import MonteCarloForecastOut
 from app.services.audit import log_audit_event
 from app.services.boardroom_memo import compute_trade_off_options
 from app.services.common import compute_planned_pct
 from app.services.contract_ledger import compute_contract_ledger_metrics
 from app.services.evm import compute_evm
+from app.services.whatif import WhatIfInputs, compute_what_if
 
 router = APIRouter(prefix="/api/v1", tags=["pmo"])
 
@@ -77,7 +82,10 @@ def get_project_evm(
     db: Session = Depends(get_db),
 ) -> EVMOut:
     project = _get_project_or_404(db, principal, project_id)
-    result = compute_evm(project)
+    return _evm_out(project_id, compute_evm(project))
+
+
+def _evm_out(project_id: UUID, result) -> EVMOut:
     return EVMOut(
         project_id=project_id,
         bac=result.bac,
@@ -92,6 +100,62 @@ def get_project_evm(
         progress=result.progress,
         method=result.method,
         anomalies=[EVMAnomalyOut(metric=a.metric, value=a.value, level=a.level, message=a.message) for a in result.anomalies],
+    )
+
+
+def _monte_carlo_out(project_id: UUID, result) -> MonteCarloForecastOut:
+    return MonteCarloForecastOut(
+        project_id=project_id,
+        p50_date=result.p50_date,
+        p85_date=result.p85_date,
+        p95_date=result.p95_date,
+        remaining_task_count=result.remaining_task_count,
+        remaining_hours_estimate=result.remaining_hours_estimate,
+        weekly_capacity_hours=result.weekly_capacity_hours,
+        historical_sample_size=result.historical_sample_size,
+        method=result.method,
+        runs=result.runs,
+    )
+
+
+# ---- What-If Scenario Engine ----
+
+
+@router.post("/projects/{project_id}/what-if", response_model=WhatIfResultOut)
+def post_project_what_if(
+    project_id: UUID,
+    payload: WhatIfRequest,
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> WhatIfResultOut:
+    """Recalculates EVM and the Monte Carlo delivery forecast (app/services/whatif.py) against a
+    hypothetical delay/budget-cut/scope-change, without writing anything to the database -- a
+    read, not a mutation, so demo/read-only tokens can call this like /evm and
+    /forecast/monte-carlo above. Deterministic given the same inputs (fixed seed) so repeatedly
+    dragging the same slider value in the UI doesn't jitter the answer."""
+    project = _get_project_or_404(db, principal, project_id)
+    result = compute_what_if(
+        db,
+        principal.organization_id,
+        project,
+        WhatIfInputs(
+            delay_days=payload.delay_days,
+            budget_delta=payload.budget_delta,
+            scope_change_percent=payload.scope_change_percent,
+        ),
+        seed=42,
+    )
+    return WhatIfResultOut(
+        project_id=project_id,
+        baseline=WhatIfScenarioOut(
+            evm=_evm_out(project_id, result.baseline.evm),
+            monte_carlo=_monte_carlo_out(project_id, result.baseline.monte_carlo),
+        ),
+        scenario=WhatIfScenarioOut(
+            evm=_evm_out(project_id, result.scenario.evm),
+            monte_carlo=_monte_carlo_out(project_id, result.scenario.monte_carlo),
+        ),
+        inputs=payload,
     )
 
 

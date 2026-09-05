@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import StageGateNumber, StageGateStatus
 from app.schemas.ai import AIResponse
 from app.schemas.common import MoneyField
+from app.schemas.project import MonteCarloForecastOut
 
 # ---- EVM (no table — computed on read by app/services/evm.py) ----
 
@@ -33,6 +34,28 @@ class EVMOut(BaseModel):
     progress: float
     method: str
     anomalies: list[EVMAnomalyOut]
+
+
+# ---- What-If Scenario Engine (no table -- computed on read by app/services/whatif.py; never
+# persists anything, so there is no create/update/delete counterpart) ----
+
+
+class WhatIfRequest(BaseModel):
+    delay_days: int = Field(default=0, ge=-365, le=730)
+    budget_delta: float = Field(default=0.0, ge=-100_000_000, le=100_000_000)
+    scope_change_percent: float = Field(default=0.0, ge=-100, le=500)
+
+
+class WhatIfScenarioOut(BaseModel):
+    evm: EVMOut
+    monte_carlo: MonteCarloForecastOut
+
+
+class WhatIfResultOut(BaseModel):
+    project_id: UUID
+    baseline: WhatIfScenarioOut
+    scenario: WhatIfScenarioOut
+    inputs: WhatIfRequest
 
 
 # ---- RACI ----
