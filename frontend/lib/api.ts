@@ -123,6 +123,35 @@ function refreshDemoSession(): Promise<void> {
 const GATEWAY_RETRY_STATUSES = new Set([502, 503, 504]);
 const GATEWAY_RETRY_DELAYS_MS = [800, 1600, 2800];
 
+// A burst of concurrent page loads (this shared free-tier deployment, hit by real traffic plus its
+// own automated verification) can trip a platform-level 429 on a plain read with nothing wrong at
+// the application layer. This is deliberately kept separate from the app's own, intentional 429s
+// (the demo-upload hourly budget, the AI executive-brief/assistant hourly quota via
+// AIRouter.enforce_rate_limit): those always come back as a real FastAPI HTTPException with a
+// meaningful JSON `detail` ("Demo upload limit reached...", "You've hit the AI request limit...")
+// and must be surfaced immediately, verbatim, never retried or relabeled -- retrying wouldn't
+// clear a quota anyway, and papering over it with a generic message would hide real, correct
+// information the user needs. A platform-edge 429 has no such body (or an unparseable one), so
+// isAppLevel429 below is the signal: only a bodyless/non-JSON 429 is treated as transient and
+// retried, the same way a gateway cold-start is.
+const RATE_LIMIT_RETRY_DELAYS_MS = [1500, 3000, 6000];
+
+async function isAppLevel429(res: Response): Promise<boolean> {
+  try {
+    const data = await res.clone().json();
+    return typeof data?.detail === "string" || typeof data?.message === "string";
+  } catch {
+    return false;
+  }
+}
+
+function retryDelayMs(res: Response, attempt: number, fallback: number[]): number {
+  const retryAfter = res.headers.get("Retry-After");
+  const seconds = retryAfter ? Number(retryAfter) : NaN;
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+  return fallback[attempt];
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, signal, auth = true, idempotent = false, retriedAfterRefresh = false } = options;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -148,10 +177,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         0,
       );
     }
-    const canRetry =
-      (method === "GET" || idempotent) && GATEWAY_RETRY_STATUSES.has(res.status) && attempt < GATEWAY_RETRY_DELAYS_MS.length;
-    if (!canRetry) break;
-    await new Promise((resolve) => setTimeout(resolve, GATEWAY_RETRY_DELAYS_MS[attempt]));
+    const retryable = method === "GET" || idempotent;
+    const canRetryGateway = retryable && GATEWAY_RETRY_STATUSES.has(res.status) && attempt < GATEWAY_RETRY_DELAYS_MS.length;
+    const canRetryRateLimit =
+      retryable && res.status === 429 && attempt < RATE_LIMIT_RETRY_DELAYS_MS.length && !(await isAppLevel429(res));
+    if (!canRetryGateway && !canRetryRateLimit) break;
+    const delay = canRetryRateLimit ? retryDelayMs(res, attempt, RATE_LIMIT_RETRY_DELAYS_MS) : GATEWAY_RETRY_DELAYS_MS[attempt];
+    await new Promise((resolve) => setTimeout(resolve, delay));
     attempt += 1;
   }
 
@@ -187,6 +219,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     if (GATEWAY_RETRY_STATUSES.has(res.status)) {
       message = "The backend is warming up after being idle — please try again in a few seconds.";
+    }
+    // Only relabels the generic fallback -- an app-level 429's real `detail` (demo-upload budget,
+    // AI hourly quota) was already picked up by the parse above and is left untouched.
+    if (res.status === 429 && message === `Request failed (429)`) {
+      message = "The server is handling a lot of requests right now — please try again in a moment.";
     }
     throw new ApiError(message, res.status);
   }
