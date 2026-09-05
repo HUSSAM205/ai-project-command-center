@@ -1,10 +1,12 @@
 from app.models.ai_request import AIRequest
 from app.models.audit_log import AuditLog
+from app.models.automation import AutomationLog, AutomationRule
 from app.models.budget import Budget, BudgetTransaction
 from app.models.consulting import AIOpportunity, BusinessCase, RoadmapPhase
 from app.models.document import Document, DocumentChunk
 from app.models.feedback import Feedback
 from app.models.milestone import Milestone
+from app.models.notification import Notification
 from app.models.organization import Organization
 from app.models.pmo import ContractLedger, RaciEntry, StageGate
 from app.models.project import Project, ProjectMember
@@ -40,4 +42,7 @@ __all__ = [
     "RaciEntry",
     "StageGate",
     "ContractLedger",
+    "AutomationRule",
+    "AutomationLog",
+    "Notification",
 ]

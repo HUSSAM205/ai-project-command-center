@@ -10,6 +10,7 @@ from app.api import (
     ai,
     analytics,
     auth,
+    automations,
     budgets,
     consulting,
     dashboard,
@@ -18,6 +19,7 @@ from app.api import (
     feedback,
     meetings,
     milestones,
+    notifications,
     pmo,
     projects,
     reports,
@@ -81,6 +83,8 @@ app.include_router(feedback.router)
 app.include_router(consulting.router)
 app.include_router(pmo.router)
 app.include_router(meetings.router)
+app.include_router(automations.router)
+app.include_router(notifications.router)
 
 
 @app.get("/health")

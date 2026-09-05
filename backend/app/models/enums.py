@@ -122,3 +122,35 @@ class StageGateStatus(str, enum.Enum):
     IN_REVIEW = "IN_REVIEW"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+
+
+class AutomationTriggerType(str, enum.Enum):
+    """The 3 standard pre-configured enterprise triggers -- see
+    app/services/automation_engine.py for what each one actually checks against real, current
+    data (never a fabricated condition)."""
+
+    TASK_OVERDUE = "TASK_OVERDUE"
+    BUDGET_BURNOVER = "BUDGET_BURNOVER"
+    CRITICAL_RISK_SPOTTED = "CRITICAL_RISK_SPOTTED"
+
+
+class AutomationActionType(str, enum.Enum):
+    AUTO_CREATE_RISK = "AUTO_CREATE_RISK"
+    DISPATCH_NOTIFICATION = "DISPATCH_NOTIFICATION"
+    RECALCULATE_HEALTH = "RECALCULATE_HEALTH"
+
+
+class AutomationOutcome(str, enum.Enum):
+    """Real outcome of one rule evaluation -- FIRED only when the condition was genuinely met
+    against real data and the action actually ran; CONDITION_NOT_MET is a normal, honest result
+    (most evaluations), not an error."""
+
+    FIRED = "FIRED"
+    CONDITION_NOT_MET = "CONDITION_NOT_MET"
+    ERROR = "ERROR"
+
+
+class NotificationCategory(str, enum.Enum):
+    CRITICAL = "CRITICAL"
+    AI_ALERT = "AI_ALERT"
+    WORKFLOW = "WORKFLOW"
