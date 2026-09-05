@@ -332,14 +332,33 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   useEffect(() => {
     if (activeTab !== "pmo" || !pendingScrollToWhatIf) return;
-    // requestAnimationFrame, not a plain synchronous call: the PMO tab's content (including
-    // WhatIfCard's #what-if-sandbox) only mounts after this render commits, so the element
-    // doesn't exist yet in the same tick setActiveTab("pmo") ran.
-    const raf = requestAnimationFrame(() => {
-      document.getElementById("what-if-sandbox")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      setPendingScrollToWhatIf(false);
-    });
-    return () => cancelAnimationFrame(raf);
+    // A single next-frame check isn't reliable here -- #what-if-sandbox doesn't necessarily exist
+    // in the DOM the very first frame after setActiveTab("pmo") commits (the PMO tab's panel
+    // mount/transition can take a beat longer than one rAF). Poll briefly instead of guessing a
+    // fixed delay, and give up quietly after ~2s if it never appears.
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 20;
+    function tryScroll() {
+      if (cancelled) return;
+      const el = document.getElementById("what-if-sandbox");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        setPendingScrollToWhatIf(false);
+        return;
+      }
+      attempts += 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        setPendingScrollToWhatIf(false);
+        return;
+      }
+      setTimeout(tryScroll, 100);
+    }
+    const timer = setTimeout(tryScroll, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [activeTab, pendingScrollToWhatIf]);
 
   if (project.loading) {
