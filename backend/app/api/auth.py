@@ -56,7 +56,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
     db.refresh(user)
 
     token = create_access_token(
-        user_id=user.id, organization_id=user.organization_id, role=user.role.value, read_only=False
+        user_id=user.id, organization_id=user.organization_id, role=user.role.value, read_only=False, email=user.email
     )
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 
@@ -68,7 +68,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
     token = create_access_token(
-        user_id=user.id, organization_id=user.organization_id, role=user.role.value, read_only=False
+        user_id=user.id, organization_id=user.organization_id, role=user.role.value, read_only=False, email=user.email
     )
     log_audit_event(
         db,

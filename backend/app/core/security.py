@@ -26,6 +26,7 @@ def create_access_token(
     read_only: bool = False,
     expires_minutes: int | None = None,
     session_id: str | None = None,
+    email: str | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
     expires_delta = timedelta(minutes=expires_minutes or settings.JWT_EXPIRES_MINUTES)
@@ -37,6 +38,11 @@ def create_access_token(
         "iat": now,
         "exp": now + expires_delta,
     }
+    if email is not None:
+        # Real accounts only (demo/anonymous tokens never carry one) -- lets CurrentPrincipal
+        # expose the caller's email for audit logging (app/services/audit.py's actor_email)
+        # without an extra User lookup on every write.
+        payload["email"] = email
     if session_id is not None:
         # Anonymous/demo tokens all carry the same "demo" sentinel `sub` (see above) — that's
         # relied on elsewhere (audit.py, consulting.py) as "not a real user row, don't try to

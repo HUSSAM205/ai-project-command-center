@@ -32,6 +32,9 @@ class CurrentPrincipal:
     # from another (rate-limit scope keys), since user_id is the same "demo" sentinel for all of
     # them. None for real authenticated users, who are already uniquely identified by user_id.
     session_id: str | None = None
+    # Real accounts only -- see create_access_token's `email` claim. None for anonymous/demo
+    # tokens, which never carry one (there is no real user row to attribute it to).
+    email: str | None = None
 
 
 def _principal_from_token(token: str) -> CurrentPrincipal:
@@ -53,6 +56,7 @@ def _principal_from_token(token: str) -> CurrentPrincipal:
         role=payload.get("role", "VIEWER"),
         read_only=bool(payload.get("read_only", False)),
         session_id=payload.get("sid"),
+        email=payload.get("email"),
     )
 
 

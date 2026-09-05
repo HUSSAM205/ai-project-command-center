@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -47,6 +47,7 @@ def list_project_tasks(
 def create_task(
     project_id: UUID,
     payload: TaskCreate,
+    request: Request,
     principal: CurrentPrincipal = Depends(require_write_access),
     db: Session = Depends(get_db),
 ) -> Task:
@@ -65,6 +66,9 @@ def create_task(
             entity_type="task",
             entity_id=task.id,
             metadata={"assignee_id": str(task.assignee_id)},
+            request=request,
+            actor_email=principal.email,
+            session_id=principal.session_id,
         )
     return task
 
@@ -82,6 +86,7 @@ def get_task_detail(
 def update_task(
     task_id: UUID,
     payload: TaskUpdate,
+    request: Request,
     principal: CurrentPrincipal = Depends(require_write_access),
     db: Session = Depends(get_db),
 ) -> Task:
@@ -100,6 +105,9 @@ def update_task(
             entity_type="task",
             entity_id=task.id,
             metadata={"assignee_id": str(task.assignee_id) if task.assignee_id else None},
+            request=request,
+            actor_email=principal.email,
+            session_id=principal.session_id,
         )
     return task
 

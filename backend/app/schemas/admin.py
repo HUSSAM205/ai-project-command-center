@@ -69,6 +69,11 @@ class AuditLogOut(BaseModel):
     entity_type: str
     entity_id: UUID | None
     event_metadata: dict[str, Any]
+    session_id: str | None = None
+    actor_email: str | None = None
+    ip_address: str | None = None
+    record_hash: str | None = None
+    prev_hash: str | None = None
     created_at: datetime
 
 

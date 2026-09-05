@@ -9,6 +9,7 @@ from app.api import (
     admin,
     ai,
     analytics,
+    audit,
     auth,
     automations,
     budgets,
@@ -85,6 +86,7 @@ app.include_router(pmo.router)
 app.include_router(meetings.router)
 app.include_router(automations.router)
 app.include_router(notifications.router)
+app.include_router(audit.router)
 
 
 @app.get("/health")

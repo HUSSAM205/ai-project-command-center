@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.ai.context import build_project_context
@@ -85,6 +85,7 @@ def list_all_projects(
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 def create_project(
     payload: ProjectCreate,
+    request: Request,
     principal: CurrentPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> ProjectOut:
@@ -110,6 +111,9 @@ def create_project(
         entity_type="project",
         entity_id=project.id,
         metadata={"name": project.name, "status": project.status.value},
+        request=request,
+        actor_email=principal.email,
+        session_id=principal.session_id,
     )
     return serialize_project(project, [], [], 0)
 
@@ -131,6 +135,7 @@ def get_project_detail(
 def update_project(
     project_id: UUID,
     payload: ProjectUpdate,
+    request: Request,
     principal: CurrentPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> ProjectOut:
@@ -149,6 +154,9 @@ def update_project(
         entity_type="project",
         entity_id=project.id,
         metadata={"fields": list(changed_fields.keys())},
+        request=request,
+        actor_email=principal.email,
+        session_id=principal.session_id,
     )
     tasks = list_tasks_for_project(db, principal.organization_id, project_id)
     risks = list_risks_for_project(db, principal.organization_id, project_id)

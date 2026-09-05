@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.serializers import serialize_risk
@@ -31,6 +31,7 @@ def list_project_risks(
 def create_risk(
     project_id: UUID,
     payload: RiskCreate,
+    request: Request,
     principal: CurrentPrincipal = Depends(require_write_access),
     db: Session = Depends(get_db),
 ) -> RiskOut:
@@ -48,6 +49,9 @@ def create_risk(
         entity_type="risk",
         entity_id=risk.id,
         metadata={"title": risk.title, "category": risk.category.value, "score": risk.probability * risk.impact},
+        request=request,
+        actor_email=principal.email,
+        session_id=principal.session_id,
     )
     return serialize_risk(risk)
 

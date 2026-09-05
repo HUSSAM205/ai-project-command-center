@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -35,6 +35,7 @@ def list_automations(
 @router.post("/{rule_id}/toggle", response_model=AutomationRuleOut)
 def toggle_automation(
     rule_id: UUID,
+    request: Request,
     principal: CurrentPrincipal = Depends(require_write_access),
     db: Session = Depends(get_db),
 ) -> AutomationRuleOut:
@@ -50,6 +51,9 @@ def toggle_automation(
         entity_type="automation_rule",
         entity_id=rule.id,
         metadata={"is_active": rule.is_active},
+        request=request,
+        actor_email=principal.email,
+        session_id=principal.session_id,
     )
     return AutomationRuleOut.model_validate(rule)
 
@@ -57,6 +61,7 @@ def toggle_automation(
 @router.post("/{rule_id}/test-run", response_model=AutomationLogOut)
 def test_run_automation(
     rule_id: UUID,
+    request: Request,
     principal: CurrentPrincipal = Depends(require_write_access),
     db: Session = Depends(get_db),
 ) -> AutomationLogOut:
@@ -75,6 +80,9 @@ def test_run_automation(
         entity_type="automation_rule",
         entity_id=rule.id,
         metadata={"outcome": log.outcome.value},
+        request=request,
+        actor_email=principal.email,
+        session_id=principal.session_id,
     )
     return AutomationLogOut.model_validate(log)
 
