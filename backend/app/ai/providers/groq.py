@@ -15,11 +15,12 @@ from app.ai.prompts import (
     document_analysis,
     document_qa,
     executive_summary,
+    meeting_intelligence,
     project_health,
     risk_analysis,
     summarize,
 )
-from app.ai.providers.live_common import parse_summary_and_detail
+from app.ai.providers.live_common import parse_json_object, parse_summary_and_detail
 from app.core.config import settings
 from app.schemas.ai import AIResponse
 
@@ -94,3 +95,23 @@ class GroqProvider(AIProvider):
 
     def answer_document_question(self, context: dict) -> AIResponse:
         return self._respond(context, document_qa)
+
+    def parse_meeting_transcript(self, context: dict) -> AIResponse:
+        prompt = meeting_intelligence.build_prompt(context)
+        text = self.generate_text(prompt, max_tokens=2048)
+        payload = parse_json_object(text)
+        decisions = payload.get("decisions") or []
+        action_items = payload.get("action_items") or []
+        risks = payload.get("risks_identified") or []
+        summary = (
+            f"{len(decisions)} decision(s), {len(action_items)} action item(s), "
+            f"{len(risks)} risk(s) identified from the transcript."
+        )
+        return AIResponse(
+            summary=summary,
+            confidence=0.8,
+            source="groq",
+            detail=None,
+            data={"decisions": decisions, "action_items": action_items, "risks_identified": risks},
+            prompt_version=meeting_intelligence.PROMPT_VERSION,
+        )

@@ -16,6 +16,7 @@ from app.api import (
     demo,
     documents,
     feedback,
+    meetings,
     milestones,
     pmo,
     projects,
@@ -79,6 +80,7 @@ app.include_router(admin.router)
 app.include_router(feedback.router)
 app.include_router(consulting.router)
 app.include_router(pmo.router)
+app.include_router(meetings.router)
 
 
 @app.get("/health")

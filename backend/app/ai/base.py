@@ -56,3 +56,11 @@ class AIProvider(ABC):
         "similarity": float}, ...]} — chunks are the top-k pgvector retrieval results for the
         question, most similar first. Implementations must ground the answer in `chunks` and
         cite which chunk_index/page it came from — never answer from outside knowledge."""
+
+    @abstractmethod
+    def parse_meeting_transcript(self, context: dict) -> AIResponse:
+        """Meeting Intelligence (Phase 4). context: {"transcript": str, "today": "YYYY-MM-DD"}.
+        Response.data must contain "decisions": list[str], "action_items": list[{"title",
+        "owner_name", "priority", "due_date", "estimated_hours"}], and "risks_identified":
+        list[{"description", "category"}] — grounded only in the transcript text; any action-item
+        field not explicitly stated must be null, never guessed."""

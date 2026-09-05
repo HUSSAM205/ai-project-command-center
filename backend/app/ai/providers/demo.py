@@ -11,18 +11,22 @@ Mode" requirement  -  not a stub, not a placeholder. It is also the terminal fal
 AIRouter, so it is unconditionally available and must never raise.
 """
 
+from datetime import date
+
 from app.ai.base import AIProvider
 from app.ai.prompts import (
     assistant_qa,
     document_analysis,
     document_qa,
     executive_summary,
+    meeting_intelligence,
     project_health,
     risk_analysis,
     summarize,
 )
 from app.schemas.ai import AIResponse
 from app.services.document_extraction import extract_structured_document_info
+from app.services.meeting_extraction import extract_meeting_intelligence
 
 DEMO_CONFIDENCE = 0.7
 
@@ -338,6 +342,64 @@ class DemoAIProvider(AIProvider):
             detail="\n".join(detail_lines).strip(),
             data={"citations": citations},
             prompt_version=document_qa.PROMPT_VERSION,
+        )
+
+    def parse_meeting_transcript(self, context: dict) -> AIResponse:
+        transcript = context.get("transcript", "") or ""
+        today_str = context.get("today")
+        today = date.fromisoformat(today_str) if today_str else date.today()
+
+        if not transcript.strip():
+            return AIResponse(
+                summary="No transcript text provided.",
+                confidence=0.3,
+                source="demo_ai",
+                detail="The transcript was empty, so no meeting intelligence could be extracted.",
+                data={"decisions": [], "action_items": [], "risks_identified": []},
+                prompt_version=meeting_intelligence.PROMPT_VERSION,
+            )
+
+        info = extract_meeting_intelligence(transcript, today=today)
+        decisions, action_items, risks = info["decisions"], info["action_items"], info["risks_identified"]
+
+        summary = (
+            f"{len(decisions)} decision(s), {len(action_items)} action item(s), "
+            f"{len(risks)} risk(s) identified from the transcript."
+        )
+
+        detail_lines = [summary, ""]
+        if decisions:
+            detail_lines.append("DECISIONS:")
+            detail_lines.extend(f"  - {d}" for d in decisions)
+        else:
+            detail_lines.append("DECISIONS: none found.")
+        if action_items:
+            detail_lines.append("ACTION ITEMS:")
+            for item in action_items:
+                bits = [item["title"]]
+                if item["owner_name"]:
+                    bits.append(f"owner: {item['owner_name']}")
+                bits.append(f"priority: {item['priority']}")
+                if item["due_date"]:
+                    bits.append(f"due: {item['due_date']}")
+                if item["estimated_hours"] is not None:
+                    bits.append(f"~{item['estimated_hours']:.0f}h")
+                detail_lines.append(f"  - {' | '.join(bits)}")
+        else:
+            detail_lines.append("ACTION ITEMS: none found.")
+        if risks:
+            detail_lines.append("RISKS IDENTIFIED:")
+            detail_lines.extend(f"  - {r['description']} ({r['category']})" for r in risks)
+        else:
+            detail_lines.append("RISKS IDENTIFIED: none found.")
+
+        return AIResponse(
+            summary=summary,
+            confidence=0.65,
+            source="demo_ai",
+            detail="\n".join(detail_lines),
+            data={"decisions": decisions, "action_items": action_items, "risks_identified": risks},
+            prompt_version=meeting_intelligence.PROMPT_VERSION,
         )
 
     def _answer_with_attachment(self, context: dict) -> AIResponse:
