@@ -14,7 +14,7 @@ import {
   YAxis,
   Legend,
 } from "recharts";
-import { Dices, Plus, SquarePen, Sparkles, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { Dices, LayoutGrid, List, Plus, SquarePen, Sparkles, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { pmoApi } from "@/lib/api-pmo";
 import { useApi } from "@/lib/useApi";
@@ -37,6 +37,7 @@ import { TypewriterText } from "@/components/ui/TypewriterText";
 import { TaskFormModal } from "@/components/forms/TaskFormModal";
 import { RiskFormModal } from "@/components/forms/RiskFormModal";
 import { Gantt } from "@/components/viz/Gantt";
+import { Kanban } from "@/components/viz/Kanban";
 import { Timeline } from "@/components/viz/Timeline";
 import { RiskMatrix } from "@/components/viz/RiskMatrix";
 import { cn, formatCompactCurrency, formatCurrency, formatDate, formatPercent, initials, titleCase } from "@/lib/utils";
@@ -55,6 +56,7 @@ import type {
   Risk,
   StageGate,
   Task,
+  TaskStatus,
   WhatIfResult,
 } from "@/lib/types";
 import { STAGE_GATE_ORDER } from "@/lib/types";
@@ -132,6 +134,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // and risking it drifting from the backend's numbers.
   const [localTasks, setLocalTasks] = useState<Task[] | null>(null);
   const [localRisks, setLocalRisks] = useState<Risk[] | null>(null);
+  const [taskView, setTaskView] = useState<"table" | "kanban">("table");
   const [taskFormOpen, setTaskFormOpen] = useState(false);
   const [riskFormOpen, setRiskFormOpen] = useState(false);
   const [editingRisk, setEditingRisk] = useState<Risk | null>(null);
@@ -168,6 +171,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       } catch (err) {
         setLocalTasks(prev);
         push(err instanceof Error ? err.message : "Could not delete the task", "error");
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taskRows, isDemo],
+  );
+
+  const handleTaskStatusChange = useCallback(
+    async (taskId: string, newStatus: TaskStatus) => {
+      const prev = taskRows;
+      setLocalTasks(prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
+      if (isDemo) {
+        push("Status updated — sandbox only, not saved", "success");
+        return;
+      }
+      try {
+        await api.updateTask(taskId, { status: newStatus });
+        push("Task status updated", "success");
+        health.reload();
+        forecast.reload();
+      } catch (err) {
+        setLocalTasks(prev);
+        push(err instanceof Error ? err.message : "Could not update task status", "error");
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -364,12 +389,24 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <ErrorState description={tasks.error.message} onRetry={tasks.reload} />
             ) : (
               <div className="space-y-4">
-                <div className="flex justify-end">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-1 rounded-md border border-border-default p-0.5">
+                    <Button variant={taskView === "table" ? "secondary" : "ghost"} size="sm" onClick={() => setTaskView("table")} aria-pressed={taskView === "table"}>
+                      <List className="h-4 w-4" /> WBS Table
+                    </Button>
+                    <Button variant={taskView === "kanban" ? "secondary" : "ghost"} size="sm" onClick={() => setTaskView("kanban")} aria-pressed={taskView === "kanban"}>
+                      <LayoutGrid className="h-4 w-4" /> Kanban
+                    </Button>
+                  </div>
                   <Button size="sm" onClick={() => setTaskFormOpen(true)}>
                     <Plus className="h-4 w-4" /> New task
                   </Button>
                 </div>
-                <DataTable columns={taskColumns} rows={taskRows} loading={tasks.loading && localTasks === null} getRowKey={(t) => t.id} emptyTitle="No tasks yet" />
+                {taskView === "table" ? (
+                  <DataTable columns={taskColumns} rows={taskRows} loading={tasks.loading && localTasks === null} getRowKey={(t) => t.id} emptyTitle="No tasks yet" />
+                ) : (
+                  <Kanban tasks={taskRows} onStatusChange={handleTaskStatusChange} readOnly={isDemo} />
+                )}
               </div>
             ),
           },
