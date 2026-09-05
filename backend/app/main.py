@@ -1,3 +1,7 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,9 +25,31 @@ from app.api import (
     tasks,
 )
 from app.core.config import settings
+from app.core.database import SessionLocal
 from app.core.middleware import SecurityHeadersMiddleware
+from app.repositories.documents import fail_stuck_processing_documents
 
-app = FastAPI(title="AI Project Command Center API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Anything still PENDING/PROCESSING the instant this process boots cannot legitimately still
+    # be in progress -- process_document (app/services/document_pipeline.py) only ever runs
+    # inside this same process, so a fresh process starting means whatever was running it before
+    # is gone for good. Cutoff is "now" (not the usual few-minutes grace window) since nothing
+    # this process has done yet could have created a real in-progress document. Complements,
+    # rather than replaces, the lazy per-request reap in app/api/documents.py, which also catches
+    # a document orphaned without the whole process restarting (e.g. a worker killed mid-task).
+    db = SessionLocal()
+    try:
+        fail_stuck_processing_documents(
+            db, datetime.now(timezone.utc), "Process interrupted by server restart. Please re-upload."
+        )
+    finally:
+        db.close()
+    yield
+
+
+app = FastAPI(title="AI Project Command Center API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -56,5 +82,15 @@ app.include_router(pmo.router)
 
 
 @app.get("/health")
+@app.get("/api/v1/health")
 def health_check() -> dict:
-    return {"status": "ok", "environment": settings.ENVIRONMENT}
+    # Plain dict, no DB call -- must stay this cheap since it's hit by Render's own liveness
+    # probe plus an external keep-alive ping (see .github/workflows/backend-keepalive.yml) every
+    # few minutes. Registered under both paths: the bare one for direct Render-origin checks
+    # (docs/DEPLOYMENT_HANDOVER.md), the /api/v1 one so it's also reachable through the frontend's
+    # same-origin proxy (next.config.ts only rewrites that prefix) without a CORS-exempt special case.
+    return {
+        "status": "healthy",
+        "environment": settings.ENVIRONMENT,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }

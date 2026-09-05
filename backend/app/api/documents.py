@@ -13,12 +13,11 @@ from app.repositories.documents import (
     count_recent_demo_uploads,
     create_document,
     delete_document,
+    fail_stuck_processing_documents,
     get_document,
     list_documents,
     list_expired_demo_documents,
-    list_stuck_processing_documents,
     search_similar_chunks,
-    set_document_status,
 )
 from app.repositories.projects import get_project
 from app.schemas.ai import AIResponse
@@ -41,6 +40,14 @@ TOP_K_CHUNKS = 5
 DEMO_UPLOAD_LIMIT_PER_HOUR = 3
 DEMO_UPLOAD_MAX_BYTES = 2 * 1024 * 1024  # 2MB
 DEMO_UPLOAD_TTL_MINUTES = 60
+
+# A file this size or smaller runs the real parse/chunk/embed pipeline synchronously, before the
+# response is sent, instead of via BackgroundTasks -- eliminating the non-durability window
+# below entirely for the common case: the client sees the document's real final status (READY or
+# FAILED, with a real reason) in the HTTP 201 response itself. Every demo upload qualifies
+# (DEMO_UPLOAD_MAX_BYTES is the same 2MB), so a guest never sees PENDING/PROCESSING at all. A
+# real account's larger uploads (up to 20MB) still take the background path below unchanged.
+INLINE_PROCESSING_MAX_BYTES = 2 * 1024 * 1024  # 2MB
 
 # process_document runs as a plain FastAPI BackgroundTask -- there is no durable queue behind it
 # (confirmed: no ARQ/Celery/RQ anywhere in this codebase or its dependencies), so it is not
@@ -73,16 +80,17 @@ def _cleanup_expired_demo_uploads(db: Session) -> None:
 def _fail_stuck_processing_documents(db: Session) -> None:
     """See PROCESSING_STUCK_MINUTES above. Same lazy-reconciliation shape as the demo-upload TTL
     reap: no scheduler in this deployment, so this runs on the read paths that would otherwise
-    just keep showing a document stuck on PENDING/PROCESSING indefinitely."""
+    just keep showing a document stuck on PENDING/PROCESSING indefinitely. Complements, rather
+    than replaces, app/main.py's startup sweep -- this one also catches a document orphaned by
+    something other than a process restart (e.g. a worker killed and replaced without the whole
+    process restarting)."""
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=PROCESSING_STUCK_MINUTES)
-    for document in list_stuck_processing_documents(db, cutoff):
-        set_document_status(
-            db,
-            document.id,
-            DocumentStatus.FAILED,
-            "Processing did not complete in time -- the background worker may have restarted "
-            "mid-task. Try uploading the file again.",
-        )
+    fail_stuck_processing_documents(
+        db,
+        cutoff,
+        "Processing did not complete in time -- the background worker may have restarted "
+        "mid-task. Try uploading the file again.",
+    )
 
 
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
@@ -97,9 +105,11 @@ async def upload_document(
     gets the full 20MB limit with no extra checks (unchanged). A demo/anonymous session
     (principal.session_id set) instead gets a narrow real-upload path gated by
     DEMO_UPLOAD_LIMIT_PER_HOUR/DEMO_UPLOAD_MAX_BYTES/DEMO_UPLOAD_TTL_MINUTES above — everyone else
-    still gets a flat 403. Parsing, chunking, and local embedding happen in a background task; the
-    document starts PENDING and the frontend polls GET /documents(/{id}) to watch it move to
-    PROCESSING -> READY|FAILED, exactly the same pipeline either way.
+    still gets a flat 403. Parsing, chunking, and local embedding run synchronously (see
+    INLINE_PROCESSING_MAX_BYTES above) for a file at or under that size -- the response already
+    carries the real final status, READY or FAILED. A larger file instead starts PENDING via a
+    background task, and the frontend polls GET /documents(/{id}) to watch it move to
+    PROCESSING -> READY|FAILED; same pipeline either way, just before vs. after the response.
 
     This route is `async def` (needed for `await file.read()` below), which means -- unlike every
     other route in this file, which is a plain `def` FastAPI auto-offloads to a worker thread --
@@ -154,7 +164,18 @@ async def upload_document(
         uploaded_session_id=principal.session_id if is_demo else None,
     )
 
-    background_tasks.add_task(process_document, document.id, document.filename, document.storage_path)
+    if len(data) <= INLINE_PROCESSING_MAX_BYTES:
+        # Runs the exact same pipeline as the background path, just synchronously before the
+        # response is sent (see INLINE_PROCESSING_MAX_BYTES above). to_thread keeps this off the
+        # event loop like every other blocking call in this handler -- it only blocks this one
+        # request's coroutine, not other concurrent requests. db.refresh below picks up the
+        # status/error_message process_document just committed through its own separate session
+        # (process_document always opens its own SessionLocal -- see its docstring) so the
+        # response reflects the real final state instead of the PENDING row created above.
+        await asyncio.to_thread(process_document, document.id, document.filename, document.storage_path)
+        await asyncio.to_thread(db.refresh, document)
+    else:
+        background_tasks.add_task(process_document, document.id, document.filename, document.storage_path)
 
     await asyncio.to_thread(
         log_audit_event,

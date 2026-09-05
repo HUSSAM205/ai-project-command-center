@@ -99,6 +99,16 @@ def list_stuck_processing_documents(db: Session, before: datetime) -> list[Docum
     return list(db.scalars(stmt).all())
 
 
+def fail_stuck_processing_documents(db: Session, before: datetime, message: str) -> None:
+    """Marks every PENDING/PROCESSING document created before `before` as FAILED with `message`.
+    Shared by two independent reconciliation passes with different cutoffs and wording:
+    app/api/documents.py's lazy per-request reap (a few minutes' grace, since a real pipeline run
+    might just be slow) and app/main.py's startup sweep (cutoff = the moment the process booted,
+    since nothing could legitimately still be in progress the instant a fresh process starts)."""
+    for document in list_stuck_processing_documents(db, before):
+        set_document_status(db, document.id, DocumentStatus.FAILED, message)
+
+
 def delete_document(db: Session, document: Document) -> None:
     db.delete(document)  # document_chunks cascade via ondelete=CASCADE
     db.commit()

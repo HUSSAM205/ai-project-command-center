@@ -74,8 +74,18 @@ export default function DocumentsPage() {
         // and a lower size cap (backend/app/api/documents.py's DEMO_UPLOAD_* constants), with the
         // resulting document auto-removed after about an hour and visible only to that session.
         // A guest over the hourly budget gets a real 429 here, surfaced via the catch below.
-        await api.uploadDocument(file);
-        push(`${file.name} uploaded — processing started`, "success");
+        // A file at or under INLINE_PROCESSING_MAX_BYTES (backend/app/api/documents.py) already
+        // comes back READY or FAILED -- the toast reflects the real outcome instead of always
+        // claiming "processing started", and reload() picks it up immediately rather than
+        // waiting for the next backoff-poll tick.
+        const uploaded = await api.uploadDocument(file);
+        if (uploaded.status === "READY") {
+          push(`${file.name} uploaded and ready`, "success");
+        } else if (uploaded.status === "FAILED") {
+          push(`${file.name} uploaded, but processing failed: ${uploaded.error_message ?? "unknown error"}`, "error");
+        } else {
+          push(`${file.name} uploaded — processing started`, "success");
+        }
         documentsApi.reload();
       } catch (err) {
         push(err instanceof Error ? err.message : "Upload failed", "error");

@@ -1,0 +1,19 @@
+name: Backend keep-alive
+
+# Render's free tier spins the backend down after ~15 minutes of no traffic; the next real
+# request then eats a cold-start delay (see lib/api.ts's GATEWAY_RETRY_* comments). Pinging
+# /health on a schedule keeps the container warm without needing a paid Render plan or a
+# third-party monitoring signup/API key -- this workflow is the entire mechanism, self-contained
+# in the repo.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    name: Ping /health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl backend health endpoint
+        run: curl -fsS --retry 3 --retry-delay 5 --max-time 20 https://ai-project-command-center-backend.onrender.com/health
