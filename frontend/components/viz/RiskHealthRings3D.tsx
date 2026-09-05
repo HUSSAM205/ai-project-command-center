@@ -3,9 +3,10 @@
 import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
+import { useReducedMotion } from "framer-motion";
 import * as THREE from "three";
 import { useVizPalette } from "@/lib/useVizPalette";
-import { riskLevelVizColor } from "@/lib/vizTheme";
+import { riskLevelVizColor, type VizPalette } from "@/lib/vizTheme";
 
 interface RingSpec {
   key: string;
@@ -50,8 +51,15 @@ function Ring({ spec, reduceMotion }: { spec: RingSpec; reduceMotion: boolean })
   );
 }
 
-function RingsScene({ entries, reduceMotion }: { entries: [string, number][]; reduceMotion: boolean }) {
-  const palette = useVizPalette();
+function RingsScene({
+  entries,
+  palette,
+  reduceMotion,
+}: {
+  entries: [string, number][];
+  palette: VizPalette;
+  reduceMotion: boolean;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   const total = entries.reduce((s, [, v]) => s + v, 0);
 
@@ -64,8 +72,7 @@ function RingsScene({ entries, reduceMotion }: { entries: [string, number][]; re
         radius: 1.1 + i * 0.55,
         speed: 0.12 + i * 0.05,
       })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- palette is read once per render, not a stable dep the memo needs to react to independently of `entries`
-    [entries],
+    [entries, palette],
   );
 
   useFrame(({ clock }) => {
@@ -98,14 +105,13 @@ function RingsScene({ entries, reduceMotion }: { entries: [string, number][]; re
  */
 export default function RiskHealthRings3D({ entries }: { entries: [string, number][] }) {
   const palette = useVizPalette();
-  const reduceMotion =
-    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduceMotion = !!useReducedMotion();
 
   return (
     <div className="h-40 w-full overflow-hidden rounded-lg" style={{ background: palette.canvas }}>
       <Canvas camera={{ position: [0, 0, 5.5], fov: 45 }} dpr={[1, 1.5]}>
         <color attach="background" args={[palette.canvas]} />
-        <RingsScene entries={entries} reduceMotion={reduceMotion} />
+        <RingsScene entries={entries} palette={palette} reduceMotion={reduceMotion} />
       </Canvas>
     </div>
   );

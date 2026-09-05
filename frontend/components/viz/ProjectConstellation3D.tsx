@@ -3,11 +3,12 @@
 import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Html, Line } from "@react-three/drei";
+import { useReducedMotion } from "framer-motion";
 import * as THREE from "three";
 import Link from "next/link";
 import type { Project, Risk } from "@/lib/types";
 import { useVizPalette } from "@/lib/useVizPalette";
-import { riskLevelVizColor } from "@/lib/vizTheme";
+import { riskLevelVizColor, type VizPalette } from "@/lib/vizTheme";
 import { formatCompactCurrency } from "@/lib/utils";
 
 /** Every project sharing at least one open risk category with another -- computed client-side
@@ -71,16 +72,17 @@ function buildLayout(projects: Project[]): NodeLayout[] {
 
 function ProjectNode({
   layout,
+  palette,
   reduceMotion,
   onSelect,
   selected,
 }: {
   layout: NodeLayout;
+  palette: VizPalette;
   reduceMotion: boolean;
   onSelect: (id: string | null) => void;
   selected: boolean;
 }) {
-  const palette = useVizPalette();
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const color = riskLevelVizColor(layout.project.risk_level, palette);
@@ -154,13 +156,14 @@ function ProjectNode({
 function ConstellationScene({
   layouts,
   edges,
+  palette,
   reduceMotion,
 }: {
   layouts: NodeLayout[];
   edges: ConstellationEdge[];
+  palette: VizPalette;
   reduceMotion: boolean;
 }) {
-  const palette = useVizPalette();
   const groupRef = useRef<THREE.Group>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const byId = useMemo(() => new Map(layouts.map((l) => [l.project.id, l])), [layouts]);
@@ -194,6 +197,7 @@ function ConstellationScene({
           <ProjectNode
             key={layout.project.id}
             layout={layout}
+            palette={palette}
             reduceMotion={reduceMotion}
             selected={selectedId === layout.project.id}
             onSelect={setSelectedId}
@@ -213,11 +217,17 @@ function ConstellationScene({
  * detail card. Dynamically imported with `ssr: false` from the dashboard page (WebGL has no
  * server-side representation); React Three Fiber disposes the GL context itself on unmount, no
  * manual cleanup needed here.
+ *
+ * `useVizPalette()`/reduced-motion are read once here, outside <Canvas>, and passed down as props
+ * rather than called again inside the scene/node components: <Canvas> mounts its children in a
+ * separate React renderer, which does not automatically re-render on an outer context change
+ * (next-themes' theme, in this case) the way a normal DOM subtree would -- a component calling
+ * the hook itself from inside the canvas would silently freeze on whatever palette was active at
+ * first mount, never reacting to a later light/dark toggle.
  */
 export default function ProjectConstellation3D({ projects, risks }: { projects: Project[]; risks: Risk[] }) {
   const palette = useVizPalette();
-  const reduceMotion =
-    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduceMotion = !!useReducedMotion();
   const layouts = useMemo(() => buildLayout(projects), [projects]);
   const edges = useMemo(() => buildEdges(projects, risks), [projects, risks]);
 
@@ -226,7 +236,7 @@ export default function ProjectConstellation3D({ projects, risks }: { projects: 
       <Canvas camera={{ position: [0, 2.4, 11], fov: 42 }} dpr={[1, 1.5]}>
         <color attach="background" args={[palette.canvas]} />
         <fog attach="fog" args={[palette.canvas, 12, 26]} />
-        <ConstellationScene layouts={layouts} edges={edges} reduceMotion={reduceMotion} />
+        <ConstellationScene layouts={layouts} edges={edges} palette={palette} reduceMotion={reduceMotion} />
       </Canvas>
     </div>
   );
