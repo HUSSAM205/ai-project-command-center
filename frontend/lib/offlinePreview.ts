@@ -20,16 +20,21 @@ import { computeRagStatus } from "./ragStatus";
  *
  * Both pages fan out several backend calls per project (EVM, stage gates, RACI, contract
  * ledger — see app/app/workspace/pmo/page.tsx) or fetch a business-case list. GET requests
- * already retry through Render free-tier cold starts (lib/api.ts / lib/api-pmo.ts's
- * GATEWAY_RETRY logic — see docs/DEPLOYMENT_HANDOVER.md), so this fallback is a last resort:
- * it only engages once that retry path has been exhausted or a request genuinely hangs past
- * OVERALL_TIMEOUT_MS. When it does, the calling page must show a visible "offline preview"
+ * already retry through Render free-tier cold starts and transient platform-level 429s
+ * (lib/api.ts / lib/api-pmo.ts's GATEWAY_RETRY / rate-limit retry logic — see
+ * docs/DEPLOYMENT_HANDOVER.md), so this fallback is a last resort: it only engages once that
+ * retry path has been exhausted or a request genuinely hangs past OVERALL_TIMEOUT_MS. That
+ * budget must stay comfortably above api.ts's own worst-case retry duration (currently up to
+ * ~10.5s across three backed-off 429 retries) or this fallback fires *before* the retry that
+ * would have quietly recovered the real data gets to finish -- swapping one bad outcome (a
+ * crash card) for another (fictional preview data shown when live data was seconds away).
+ * When this fallback does engage, the calling page must show a visible "offline preview"
  * label — this data is never presented as live, matching the same discipline
  * lib/localExecutiveBrief.ts uses for the dashboard's executive brief fallback. Every entity
  * below is fictional, never a real company name.
  */
 
-export const OVERALL_TIMEOUT_MS = 9000;
+export const OVERALL_TIMEOUT_MS = 14000;
 
 export class TimeoutError extends Error {}
 
