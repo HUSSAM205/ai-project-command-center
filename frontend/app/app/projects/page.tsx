@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus, Trash2 } from "lucide-react";
+import { CalendarRange, LayoutGrid, List, Search, Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
@@ -14,9 +14,11 @@ import { Button } from "@/components/ui/Button";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { HealthGauge } from "@/components/ui/StatusIndicator";
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ProjectFormModal } from "@/components/forms/ProjectFormModal";
 import { useToast } from "@/components/ui/Toast";
-import { formatCompactCurrency, formatDate, titleCase } from "@/lib/utils";
+import { cn, formatCompactCurrency, formatDate, titleCase } from "@/lib/utils";
 import { buildOfflineDashboard, buildOfflineProjects, withOfflineFallback } from "@/lib/offlinePreview";
 
 const STATUS_OPTIONS = ["PLANNING", "ACTIVE", "ON_HOLD", "AT_RISK", "COMPLETED", "CANCELLED"];
@@ -30,6 +32,30 @@ const HEALTH_OPTIONS = [
 
 const EMPTY_PROJECTS: Project[] = [];
 
+// Sector is not a stored field on Project -- this repo has no industry-taxonomy column, and
+// inventing a per-project value with no real backing would be exactly the "fabricated data" this
+// codebase avoids elsewhere. Instead this is a real, deterministic keyword match against each
+// project's own name/description/client text; anything that matches nothing gets an honest
+// generic label rather than a guessed one.
+const SECTOR_KEYWORDS: [RegExp, string][] = [
+  [/bank|basel|fintech/i, "FinTech"],
+  [/avionics|defense|aerospace|telemetry system/i, "Defense"],
+  [/gpu|datacenter|cloud|sovereign cloud/i, "Cloud & AI Infra"],
+  [/vaccine|cold-chain|biomedical|health|pharma/i, "Healthcare"],
+  [/port logistics|terminal|supply chain/i, "Supply Chain"],
+  [/grid|smart meter|energy|utilit/i, "Energy & Utilities"],
+  [/5g|open-ran|telecom/i, "Telecom"],
+  [/erp|audit|governance/i, "Governance"],
+];
+
+function inferSector(project: Project): string {
+  const haystack = `${project.name} ${project.description ?? ""} ${project.client ?? ""}`;
+  for (const [pattern, label] of SECTOR_KEYWORDS) {
+    if (pattern.test(haystack)) return label;
+  }
+  return "Enterprise";
+}
+
 export default function ProjectsPage() {
   const { t } = useLanguage();
   const router = useRouter();
@@ -42,6 +68,33 @@ export default function ProjectsPage() {
   const [health, setHealth] = useState("");
   const [localProjects, setLocalProjects] = useState<Project[] | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [view, setView] = useState<"table" | "cards" | "roadmap">("table");
+
+  // Persisted per browser tab (sessionStorage), not a stored preference tied to the account --
+  // reads back only after mount so the very first server-rendered paint always matches (avoids a
+  // hydration mismatch), then a real return visit within the same tab keeps the last view chosen.
+  useEffect(() => {
+    try {
+      // Reading sessionStorage can only happen client-side, so this can't be a lazy useState
+      // initializer without mismatching the server-rendered "table" default during hydration --
+      // this is a one-time sync-on-mount read, not a cascading-render risk.
+      const stored = window.sessionStorage.getItem("projectsView");
+      if (stored === "table" || stored === "cards" || stored === "roadmap") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setView(stored);
+      }
+    } catch {
+      // sessionStorage can throw in a locked-down browser context -- table view is a fine default
+    }
+  }, []);
+  function changeView(v: "table" | "cards" | "roadmap") {
+    setView(v);
+    try {
+      window.sessionStorage.setItem("projectsView", v);
+    } catch {
+      // best-effort only
+    }
+  }
 
   const rows = localProjects ?? projects.data?.data ?? EMPTY_PROJECTS;
   const offline = projects.data?.offline ?? false;
@@ -225,16 +278,173 @@ export default function ProjectsPage() {
           placeholder="All priorities"
         />
         <Select className="w-44" value={health} onChange={(e) => setHealth(e.target.value)} options={HEALTH_OPTIONS} placeholder="All health levels" />
+        <div className="ml-auto flex items-center gap-1 rounded-md border border-border-default p-0.5">
+          <Button variant={view === "cards" ? "secondary" : "ghost"} size="sm" onClick={() => changeView("cards")} aria-pressed={view === "cards"}>
+            <LayoutGrid className="h-4 w-4" /> Cards
+          </Button>
+          <Button variant={view === "table" ? "secondary" : "ghost"} size="sm" onClick={() => changeView("table")} aria-pressed={view === "table"}>
+            <List className="h-4 w-4" /> Data Grid
+          </Button>
+          <Button variant={view === "roadmap" ? "secondary" : "ghost"} size="sm" onClick={() => changeView("roadmap")} aria-pressed={view === "roadmap"}>
+            <CalendarRange className="h-4 w-4" /> Roadmap
+          </Button>
+        </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={filtered}
-        loading={projects.loading}
-        getRowKey={(p) => p.id}
-        onRowClick={offline ? undefined : (p) => router.push(`/app/projects/${p.id}`)}
-        emptyTitle="No projects match your filters"
-      />
+      {view === "table" && (
+        <DataTable
+          columns={columns}
+          rows={filtered}
+          loading={projects.loading}
+          getRowKey={(p) => p.id}
+          onRowClick={offline ? undefined : (p) => router.push(`/app/projects/${p.id}`)}
+          emptyTitle="No projects match your filters"
+        />
+      )}
+      {view === "cards" && (
+        <ProjectCardsGrid projects={filtered} loading={projects.loading} offline={offline} onOpen={(p) => router.push(`/app/projects/${p.id}`)} />
+      )}
+      {view === "roadmap" && <PortfolioRoadmap projects={filtered} onOpen={(p) => router.push(`/app/projects/${p.id}`)} />}
+    </div>
+  );
+}
+
+function ProjectCardsGrid({
+  projects,
+  loading,
+  offline,
+  onOpen,
+}: {
+  projects: Project[];
+  loading: boolean;
+  offline: boolean;
+  onOpen: (p: Project) => void;
+}) {
+  if (loading && projects.length === 0) {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-44 animate-pulse rounded-lg border border-border-default bg-subtle" />
+        ))}
+      </div>
+    );
+  }
+  if (projects.length === 0) {
+    return <EmptyState title="No projects match your filters" />;
+  }
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {projects.map((p) => {
+        const burnPct = p.budget > 0 ? (p.actual_cost / p.budget) * 100 : 0;
+        return (
+          <button
+            key={p.id}
+            onClick={() => (offline ? undefined : onOpen(p))}
+            disabled={offline}
+            className="flex flex-col rounded-lg border border-border-default bg-surface p-4 text-left transition-colors hover:border-border-strong hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <Badge tone="neutral">{inferSector(p)}</Badge>
+              <Badge tone={ragStatusTone(p.rag_status)} dot>
+                {p.rag_status.replace("_", " ")}
+              </Badge>
+            </div>
+            <p className="mt-3 line-clamp-2 text-sm font-semibold text-text-primary">{p.name}</p>
+            <p className="mt-0.5 text-xs text-text-tertiary">{p.client ?? "Internal"}</p>
+
+            <div className="mt-4 flex items-center gap-3">
+              <HealthGauge score={p.health_score} size={36} />
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-[11px] text-text-tertiary">
+                  <span>Budget burn</span>
+                  <span className="font-tabular">{formatCompactCurrency(p.actual_cost)} / {formatCompactCurrency(p.budget)}</span>
+                </div>
+                <ProgressBar value={burnPct} tone={burnPct > 100 ? "critical" : burnPct > 85 ? "warning" : "success"} className="mt-1" />
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between border-t border-border-default pt-3">
+              <div className="flex items-center gap-1.5">
+                <Badge tone={priorityTone(p.priority)}>{titleCase(p.priority)}</Badge>
+              </div>
+              <span className="font-tabular text-xs text-text-tertiary">Due {formatDate(p.end_date)}</span>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const ROADMAP_RAG_BAR: Record<Project["rag_status"], string> = {
+  ON_TRACK: "bg-success-solid",
+  AT_RISK: "bg-warning-solid",
+  CRITICAL: "bg-critical-solid",
+  COMPLETED: "bg-info-solid",
+};
+
+/** A real, date-scaled timeline -- not a fixed single-year Q1-Q4 grid, since this portfolio's
+ * seeded programs genuinely span multiple years (2025-2027). Each bar's position/width is
+ * proportional to (start,end) against the min/max across every project actually shown, so it
+ * stays accurate as the filtered set changes. */
+function PortfolioRoadmap({ projects, onOpen }: { projects: Project[]; onOpen: (p: Project) => void }) {
+  const withDates = projects.filter((p) => p.start_date && p.end_date);
+  if (withDates.length === 0) {
+    return <EmptyState title="No projects with a start and end date to plot" />;
+  }
+  const starts = withDates.map((p) => new Date(p.start_date!).getTime());
+  const ends = withDates.map((p) => new Date(p.end_date!).getTime());
+  const minTime = Math.min(...starts);
+  const maxTime = Math.max(...ends);
+  const span = Math.max(1, maxTime - minTime);
+
+  const quarterMarks: { label: string; pct: number }[] = [];
+  const startDate = new Date(minTime);
+  const firstQuarterMonth = Math.floor(startDate.getMonth() / 3) * 3;
+  const cursor = new Date(startDate.getFullYear(), firstQuarterMonth, 1);
+  while (cursor.getTime() <= maxTime) {
+    const pct = ((cursor.getTime() - minTime) / span) * 100;
+    if (pct >= 0) quarterMarks.push({ label: `Q${Math.floor(cursor.getMonth() / 3) + 1} ${cursor.getFullYear()}`, pct });
+    cursor.setMonth(cursor.getMonth() + 3);
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border-default bg-surface p-4">
+      <div className="min-w-[720px]">
+        <div className="relative mb-2 h-5 border-b border-border-default">
+          {quarterMarks.map((q) => (
+            <div key={q.label} className="absolute top-0 -translate-x-1/2 text-[10px] text-text-tertiary" style={{ left: `${q.pct}%` }}>
+              {q.label}
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          {withDates.map((p) => {
+            const start = new Date(p.start_date!).getTime();
+            const end = new Date(p.end_date!).getTime();
+            const leftPct = ((start - minTime) / span) * 100;
+            const widthPct = Math.max(0.8, ((end - start) / span) * 100);
+            return (
+              <div key={p.id} className="flex items-center gap-3">
+                <button onClick={() => onOpen(p)} className="w-56 shrink-0 truncate text-left text-xs font-medium text-text-primary hover:underline">
+                  {p.name}
+                </button>
+                <div className="relative h-5 flex-1">
+                  {quarterMarks.map((q) => (
+                    <div key={q.label} className="absolute inset-y-0 w-px bg-border-default/60" style={{ left: `${q.pct}%` }} />
+                  ))}
+                  <button
+                    onClick={() => onOpen(p)}
+                    className={cn("absolute inset-y-0 rounded-sm opacity-90 transition-opacity hover:opacity-100", ROADMAP_RAG_BAR[p.rag_status])}
+                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                    title={`${p.name}: ${formatDate(p.start_date)} - ${formatDate(p.end_date)}`}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

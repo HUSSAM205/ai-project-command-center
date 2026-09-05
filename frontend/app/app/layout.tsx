@@ -32,6 +32,7 @@ import { Spinner } from "@/components/ui/LoadingState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CommandBar, CommandBarTrigger } from "@/components/ui/CommandBar";
 import { TelemetryDrawer, TelemetryDrawerTrigger } from "@/components/ui/TelemetryDrawer";
+import { CopilotLauncher } from "@/components/ai/CopilotLauncher";
 import { PulseDot } from "@/components/ui/PulseDot";
 import { useAuth } from "@/lib/auth";
 import { useLanguage, type Lang, type TranslationKey } from "@/lib/i18n";
@@ -267,6 +268,7 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
 
       <CommandBar />
       <TelemetryDrawer />
+      <CopilotLauncher />
     </div>
   );
 }
