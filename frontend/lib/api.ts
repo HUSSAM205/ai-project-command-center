@@ -9,6 +9,7 @@ import type {
   AssigneeCandidate,
   AuditLogPage,
   AuthResponse,
+  BalanceSuggestion,
   Bottleneck,
   Budget,
   BudgetTransaction,
@@ -299,6 +300,7 @@ export const api = {
   updateResource: (id: string, payload: Partial<Resource>) =>
     request<Resource>(`/resources/${id}`, { method: "PATCH", body: payload }),
   deleteResource: (id: string) => request<void>(`/resources/${id}`, { method: "DELETE" }),
+  balanceSuggestions: () => request<BalanceSuggestion[]>("/resources/balance-suggestions", { method: "POST" }),
   allocations: (projectId: string) => request<ResourceAllocation[]>(`/projects/${projectId}/allocations`),
   createAllocation: (projectId: string, payload: Partial<ResourceAllocation>) =>
     request<ResourceAllocation>(`/projects/${projectId}/allocations`, { method: "POST", body: payload }),

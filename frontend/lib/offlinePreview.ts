@@ -437,7 +437,10 @@ export function buildOfflineRisks() {
 }
 
 export function buildOfflineResources(): Resource[] {
-  return [
+  // logged_hours/planned_hours are a plausible ~4-week snapshot (weekly workload/capacity * 4) so
+  // the offline cost-burn tiles render sensible, non-zero figures -- same "illustrative, not real"
+  // framing every other offline preview dataset in this file already carries.
+  const rows: Array<Omit<Resource, "logged_hours" | "planned_hours" | "cost_burn" | "planned_cost">> = [
     { id: "offline-res1", organization_id: "offline-preview", name: "Infra Lead", role: "Infrastructure Engineer", department: "Engineering", skills: ["Networking", "Cloud"], hourly_cost: 145, capacity_hours_per_week: 40, current_workload_hours_per_week: 38, utilization_state: "OPTIMAL" },
     { id: "offline-res2", organization_id: "offline-preview", name: "Data Eng", role: "Data Engineer", department: "Engineering", skills: ["ETL", "SQL"], hourly_cost: 130, capacity_hours_per_week: 40, current_workload_hours_per_week: 44, utilization_state: "OVERLOADED" },
     { id: "offline-res3", organization_id: "offline-preview", name: "PMO", role: "Program Manager", department: "PMO", skills: ["Change Management"], hourly_cost: 160, capacity_hours_per_week: 40, current_workload_hours_per_week: 30, utilization_state: "UNDERUTILIZED" },
@@ -445,6 +448,17 @@ export function buildOfflineResources(): Resource[] {
     { id: "offline-res5", organization_id: "offline-preview", name: "IoT Eng", role: "IoT Engineer", department: "Engineering", skills: ["Embedded", "Telemetry"], hourly_cost: 125, capacity_hours_per_week: 40, current_workload_hours_per_week: 12, utilization_state: "UNDERUTILIZED" },
     { id: "offline-res6", organization_id: "offline-preview", name: "SecOps", role: "Security Engineer", department: "Security", skills: ["AppSec", "Cloud Security"], hourly_cost: 155, capacity_hours_per_week: 40, current_workload_hours_per_week: 41, utilization_state: "OVERLOADED" },
   ];
+  return rows.map((r) => {
+    const logged_hours = r.current_workload_hours_per_week * 4;
+    const planned_hours = r.capacity_hours_per_week * 4;
+    return {
+      ...r,
+      logged_hours,
+      planned_hours,
+      cost_burn: logged_hours * r.hourly_cost,
+      planned_cost: planned_hours * r.hourly_cost,
+    };
+  });
 }
 
 // variance = forecasted_final_cost - budget (positive = projected over budget); variance_percent

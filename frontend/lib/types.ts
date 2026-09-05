@@ -149,6 +149,13 @@ export interface Resource {
   capacity_hours_per_week: number;
   current_workload_hours_per_week: number;
   utilization_state: UtilizationState;
+  // Real financial burn (backend/app/api/serializers.py's serialize_resource) -- logged_hours/
+  // planned_hours are sums of Task.actual_hours/estimated_hours across every task assigned to this
+  // resource; cost_burn/planned_cost = those hours * hourly_cost. Not fabricated.
+  logged_hours: number;
+  planned_hours: number;
+  cost_burn: number;
+  planned_cost: number;
 }
 
 export interface ResourceAllocation {
@@ -253,6 +260,24 @@ export interface AssigneeCandidate {
   availability_pct: number;
   cost_score: number;
   overall: number;
+  explanation: string;
+}
+
+// backend/app/services/workload_balancer.py's suggest_portfolio_balance -- one real, actionable
+// reassignment per currently-overloaded (>110%) resource, reusing the same explainable candidate
+// ranking as AssigneeCandidate and only ever suggesting a genuinely skill-qualified alternative who
+// would land at/under 75% utilization after taking the task. A read; applying it is a real,
+// separate PATCH /tasks/{id} the caller makes itself.
+export interface BalanceSuggestion {
+  task_id: string;
+  task_title: string;
+  from_resource_id: string;
+  from_resource_name: string;
+  from_utilization_pct: number;
+  to_resource_id: string;
+  to_resource_name: string;
+  to_utilization_pct_before: number;
+  to_utilization_pct_after: number;
   explanation: string;
 }
 

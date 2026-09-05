@@ -1,14 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Repeat, ShieldAlert, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowRight, DollarSign, Repeat, ShieldAlert, Sparkles, Users, Wand2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import type { AssigneeCandidate } from "@/lib/types";
+import type { AssigneeCandidate, BalanceSuggestion } from "@/lib/types";
 import { Badge, utilizationTone, type SemanticTone } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/Card";
+import { Drawer } from "@/components/ui/Drawer";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { OfflinePreviewBanner } from "@/components/ui/OfflinePreviewBanner";
 import { Select } from "@/components/ui/Select";
@@ -52,6 +53,13 @@ export default function ResourcesPage() {
   const [candidates, setCandidates] = useState<AssigneeCandidate[] | null>(null);
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
+
+  const [balanceDrawerOpen, setBalanceDrawerOpen] = useState(false);
+  const [balanceSuggestions, setBalanceSuggestions] = useState<BalanceSuggestion[] | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [applyingTaskId, setApplyingTaskId] = useState<string | null>(null);
+  const [appliedTaskIds, setAppliedTaskIds] = useState<Set<string>>(new Set());
 
   const offline = resourcesApi.data?.offline ?? false;
   const resources = resourcesApi.data?.data ?? EMPTY_RESOURCES;
@@ -99,14 +107,35 @@ export default function ResourcesPage() {
     },
     { key: "state", header: "Status", sortValue: (r) => r.utilization_state, render: (r) => <Badge tone={utilizationTone(r.utilization_state)}>{r.utilization_state}</Badge> },
     { key: "cost", header: "Hourly Cost", align: "right", sortValue: (r) => r.hourly_cost, render: (r) => <span className="font-tabular">${r.hourly_cost}/hr</span> },
+    {
+      key: "burn",
+      header: "Cost Burn",
+      align: "right",
+      sortValue: (r) => r.cost_burn,
+      render: (r) => {
+        const overPlanned = r.planned_cost > 0 && r.cost_burn > r.planned_cost;
+        return (
+          <div>
+            <p className={`font-tabular text-sm font-medium ${overPlanned ? "text-critical-fg" : "text-text-primary"}`}>
+              ${r.cost_burn.toLocaleString()}
+            </p>
+            <p className="font-tabular text-[11px] text-text-tertiary">of ${r.planned_cost.toLocaleString()} planned</p>
+          </div>
+        );
+      },
+    },
   ];
 
   const utilizationSummary = useMemo(() => {
-    const total = resources.length || 1;
     const overloaded = resources.filter((r) => r.utilization_state === "OVERLOADED").length;
-    const optimal = resources.filter((r) => r.utilization_state === "OPTIMAL").length;
-    const under = resources.filter((r) => r.utilization_state === "UNDERUTILIZED").length;
-    return { overloaded, optimal, under, total };
+    // Real weekly labor cost of everyone's current assigned load -- hourly_cost * this week's
+    // actual workload hours, summed across the org. Not a historical/logged figure (that's
+    // cost_burn below); this is "what the current bench costs per week right now."
+    const weeklyBurnRate = resources.reduce((sum, r) => sum + r.hourly_cost * r.current_workload_hours_per_week, 0);
+    const avgUtilizationPct = resources.length > 0
+      ? resources.reduce((sum, r) => sum + utilizationRatioPct(r), 0) / resources.length
+      : 0;
+    return { overloaded, weeklyBurnRate, avgUtilizationPct };
   }, [resources]);
 
   // Data-driven: computed from the real ratio on every resource, never a hardcoded name list.
@@ -114,6 +143,35 @@ export default function ResourcesPage() {
     () => resources.filter((r) => utilizationRatioPct(r) > OVER_ALLOCATION_THRESHOLD_PCT),
     [resources],
   );
+
+  async function openBalanceDrawer() {
+    setBalanceDrawerOpen(true);
+    setBalanceLoading(true);
+    setBalanceError(null);
+    try {
+      const result = await api.balanceSuggestions();
+      setBalanceSuggestions(result);
+    } catch (err) {
+      setBalanceError(err instanceof ApiError ? err.message : "Could not compute balance suggestions.");
+    } finally {
+      setBalanceLoading(false);
+    }
+  }
+
+  async function applyBalanceSuggestion(s: BalanceSuggestion) {
+    setApplyingTaskId(s.task_id);
+    setBalanceError(null);
+    try {
+      await api.updateTask(s.task_id, { assignee_id: s.to_resource_id });
+      setAppliedTaskIds((prev) => new Set(prev).add(s.task_id));
+      resourcesApi.reload();
+      tasksApi.reload();
+    } catch (err) {
+      setBalanceError(err instanceof ApiError ? err.message : "Failed to apply this reassignment.");
+    } finally {
+      setApplyingTaskId(null);
+    }
+  }
 
   async function runSuggest() {
     if (!selectedTaskId) return;
@@ -137,23 +195,40 @@ export default function ResourcesPage() {
           <h1 className="text-xl font-semibold text-text-primary">Resources</h1>
           <p className="mt-1 text-sm text-text-tertiary">Capacity, allocation, and utilization across the bench</p>
         </div>
-        {offline && (
-          <OfflinePreviewBanner onRetry={() => { resourcesApi.reload(); tasksApi.reload(); }} subject="resource data" inline className="mt-1" />
-        )}
+        <div className="flex items-center gap-2">
+          {offline && (
+            <OfflinePreviewBanner onRetry={() => { resourcesApi.reload(); tasksApi.reload(); }} subject="resource data" inline className="mt-1" />
+          )}
+          <Button onClick={openBalanceDrawer} disabled={offline}>
+            <Wand2 className="h-4 w-4" aria-hidden="true" />
+            Auto-Balance Portfolio Workload
+          </Button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* Macro Capacity Ribbon -- every figure computed live from the real /resources payload
+          (never a fixed list): total headcount, overloaded count (crimson), average utilization
+          across the bench, and the real weekly labor cost of everyone's current assigned load. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Overloaded</p>
+          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+            <Users className="h-3.5 w-3.5" aria-hidden="true" /> Total Human Capital
+          </p>
+          <p className="mt-2 font-tabular text-xl font-semibold text-text-primary">{resources.length}</p>
+        </Card>
+        <Card className="p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Overloaded Headcount</p>
           <p className="mt-2 font-tabular text-xl font-semibold text-critical-fg">{utilizationSummary.overloaded}</p>
         </Card>
         <Card className="p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Optimal</p>
-          <p className="mt-2 font-tabular text-xl font-semibold text-success-fg">{utilizationSummary.optimal}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Average Utilization</p>
+          <p className="mt-2 font-tabular text-xl font-semibold text-text-primary">{utilizationSummary.avgUtilizationPct.toFixed(0)}%</p>
         </Card>
         <Card className="p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">Underutilized</p>
-          <p className="mt-2 font-tabular text-xl font-semibold text-info-fg">{utilizationSummary.under}</p>
+          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-text-tertiary">
+            <DollarSign className="h-3.5 w-3.5" aria-hidden="true" /> Weekly Burn Rate
+          </p>
+          <p className="mt-2 font-tabular text-xl font-semibold text-text-primary">${Math.round(utilizationSummary.weeklyBurnRate).toLocaleString()}</p>
         </Card>
       </div>
 
@@ -224,6 +299,71 @@ export default function ResourcesPage() {
       </Card>
 
       <DataTable columns={columns} rows={resources} loading={resourcesApi.loading} getRowKey={(r) => r.id} emptyTitle="No resources yet" />
+
+      <Drawer
+        open={balanceDrawerOpen}
+        onClose={() => setBalanceDrawerOpen(false)}
+        title="Auto-Balance Portfolio Workload"
+        width="lg"
+      >
+        <p className="mb-4 text-xs text-text-tertiary">
+          One real, actionable reassignment per resource currently over {OVER_ALLOCATION_THRESHOLD_PCT}% utilization —
+          each candidate has genuine skill overlap with the task and would land at or under 75% utilization after
+          taking it. Explainable, not AI-generated; a resource with no qualified under-75% alternative is omitted
+          rather than given a mismatched suggestion.
+        </p>
+
+        {balanceError && <p className="mb-3 text-sm text-critical-fg">{balanceError}</p>}
+
+        {balanceLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-md border border-border-default bg-subtle" />
+            ))}
+          </div>
+        ) : balanceSuggestions && balanceSuggestions.length === 0 ? (
+          <EmptyState
+            title="No actionable reassignments right now"
+            description={`No overloaded resource currently has both an incomplete task and a genuinely skill-qualified alternative under 75% utilization. Overload may still be real — it just can't be resolved with a single safe reassignment today.`}
+          />
+        ) : (
+          <ul className="space-y-3">
+            {balanceSuggestions?.map((s) => {
+              const applied = appliedTaskIds.has(s.task_id);
+              return (
+                <li key={s.task_id} className="rounded-md border border-border-default bg-subtle/40 p-3">
+                  <p className="text-sm font-medium text-text-primary">{s.task_title}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
+                    <span className="font-medium text-critical-fg">{s.from_resource_name}</span>
+                    <span className="font-tabular">({s.from_utilization_pct.toFixed(0)}%)</span>
+                    <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="font-medium text-text-primary">{s.to_resource_name}</span>
+                    <span className="font-tabular">
+                      ({s.to_utilization_pct_before.toFixed(0)}% → {s.to_utilization_pct_after.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-text-tertiary">{s.explanation}</p>
+                  <div className="mt-3 flex justify-end">
+                    {applied ? (
+                      <Badge tone="success" dot>Reassigned</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => applyBalanceSuggestion(s)}
+                        loading={applyingTaskId === s.task_id}
+                        disabled={applyingTaskId !== null}
+                      >
+                        Apply Reassignment <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Drawer>
     </div>
   );
 }
