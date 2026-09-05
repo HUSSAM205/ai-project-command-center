@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
@@ -65,6 +66,31 @@ def export_audit_logs(
         db, principal.organization_id, action=action, entity_type=resource_type, date_from=date_from, date_to=date_to
     )
 
+    # Materialized into plain tuples up front, not read lazily from the ORM rows inside the
+    # generator below: log_audit_event's own db.commit() (for the "audit.export" event, right
+    # after this) expires every ORM instance tied to `db`, including everything in `rows` --
+    # StreamingResponse iterates its generator after this route function has already returned, by
+    # which point the request-scoped `db` session may already be torn down. Touching `row.<attr>`
+    # at that point silently truncated the stream to just the header row (caught in live
+    # verification, not hypothetically) rather than raising a visible error.
+    csv_rows = [
+        (
+            str(row.id),
+            row.created_at.isoformat(),
+            row.action,
+            row.entity_type,
+            str(row.entity_id) if row.entity_id else "",
+            str(row.actor_user_id) if row.actor_user_id else "",
+            row.actor_email or "",
+            row.session_id or "",
+            row.ip_address or "",
+            json.dumps(row.event_metadata, sort_keys=True),
+            row.record_hash or "",
+            row.prev_hash or "",
+        )
+        for row in rows
+    ]
+
     def generate():
         buf = io.StringIO()
         writer = csv.writer(buf)
@@ -75,25 +101,10 @@ def export_audit_logs(
             ]
         )
         yield buf.getvalue()
-        for row in rows:
+        for values in csv_rows:
             buf.seek(0)
             buf.truncate(0)
-            writer.writerow(
-                [
-                    str(row.id),
-                    row.created_at.isoformat(),
-                    row.action,
-                    row.entity_type,
-                    str(row.entity_id) if row.entity_id else "",
-                    str(row.actor_user_id) if row.actor_user_id else "",
-                    row.actor_email or "",
-                    row.session_id or "",
-                    row.ip_address or "",
-                    __import__("json").dumps(row.event_metadata, sort_keys=True),
-                    row.record_hash or "",
-                    row.prev_hash or "",
-                ]
-            )
+            writer.writerow(values)
             yield buf.getvalue()
 
     log_audit_event(
