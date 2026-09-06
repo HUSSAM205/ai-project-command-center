@@ -241,6 +241,53 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return (await res.json()) as T;
 }
 
+// A handful of read endpoints are hit far more often than the rest: `allTasks`/`allRisks` each
+// fan out one request per project (N+1 by nature -- there's no org-wide /tasks or /risks endpoint,
+// see their own comments below), and `projects`/`resources` back onto multiple pages that all
+// mount independently. Rapid tab-switching or a quick round of page navigations was refetching all
+// of these from scratch every time, which is what actually trips the free-tier backend's rate
+// limiting -- not any single page being expensive on its own. This is a plain in-memory
+// stale-while-revalidate cache, not a general-purpose HTTP cache: entries are addressed by a fixed
+// set of keys (below), live only for this tab's session, and are invalidated explicitly by the
+// mutations that would make them wrong rather than by guessing at cache-control semantics.
+const CACHE_FRESH_MS = 45_000;
+const CACHE_STALE_CEILING_MS = 5 * 60_000;
+const responseCache = new Map<string, { data: unknown; timestamp: number }>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const pending = inFlightRequests.get(key) as Promise<T> | undefined;
+  if (pending) return pending;
+
+  const entry = responseCache.get(key) as { data: T; timestamp: number } | undefined;
+  const age = entry ? Date.now() - entry.timestamp : Infinity;
+
+  if (entry && age < CACHE_FRESH_MS) return Promise.resolve(entry.data);
+
+  const promise = fetcher()
+    .then((data) => {
+      responseCache.set(key, { data, timestamp: Date.now() });
+      return data;
+    })
+    .finally(() => inFlightRequests.delete(key));
+  inFlightRequests.set(key, promise);
+
+  if (entry && age < CACHE_STALE_CEILING_MS) {
+    // Stale-while-revalidate: hand back what we already have immediately and let `promise` above
+    // refresh the cache in the background for whoever asks next. A background revalidation failure
+    // must never surface here (or become an unhandled rejection) -- a caller that actually needs
+    // fresh data finds out for real the next time this key is asked for past CACHE_FRESH_MS.
+    promise.catch(() => {});
+    return Promise.resolve(entry.data);
+  }
+
+  return promise;
+}
+
+function invalidateCached(...keys: string[]) {
+  for (const key of keys) responseCache.delete(key);
+}
+
 export const api = {
   // Auth
   login: (email: string, password: string) =>
@@ -254,12 +301,22 @@ export const api = {
   dashboard: () => request<DashboardSummary>("/dashboard"),
 
   // Projects
-  projects: () => request<Project[]>("/projects"),
+  projects: () => cached("projects", () => request<Project[]>("/projects")),
   project: (id: string) => request<Project>(`/projects/${id}`),
-  createProject: (payload: Partial<Project>) => request<Project>("/projects", { method: "POST", body: payload }),
+  createProject: (payload: Partial<Project>) =>
+    request<Project>("/projects", { method: "POST", body: payload }).then((p) => {
+      invalidateCached("projects", "allTasks", "allRisks");
+      return p;
+    }),
   updateProject: (id: string, payload: Partial<Project>) =>
-    request<Project>(`/projects/${id}`, { method: "PATCH", body: payload }),
-  deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: "DELETE" }),
+    request<Project>(`/projects/${id}`, { method: "PATCH", body: payload }).then((p) => {
+      invalidateCached("projects", "allTasks", "allRisks");
+      return p;
+    }),
+  deleteProject: (id: string) =>
+    request<void>(`/projects/${id}`, { method: "DELETE" }).then(() => {
+      invalidateCached("projects", "allTasks", "allRisks");
+    }),
   projectHealth: (id: string) => request<HealthBreakdown>(`/projects/${id}/health`),
   projectForecast: (id: string) => request<CostForecast>(`/projects/${id}/forecast`),
   projectMonteCarloForecast: (id: string) => request<MonteCarloForecast>(`/projects/${id}/forecast/monte-carlo`),
@@ -269,26 +326,40 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
   // The contract only documents /projects/{id}/tasks (no org-wide list), so the cross-project
   // Tasks page aggregates by fetching tasks for every project and tagging them with project info.
-  allTasks: async (): Promise<(Task & { project_name?: string })[]> => {
-    const projects = await request<Project[]>("/projects");
-    const perProject = await Promise.all(
-      projects.map((p) =>
-        request<Task[]>(`/projects/${p.id}/tasks`).then((tasks) =>
-          tasks.map((t) => ({ ...t, project_name: p.name })),
+  allTasks: (): Promise<(Task & { project_name?: string })[]> =>
+    cached("allTasks", async () => {
+      const projects = await request<Project[]>("/projects");
+      const perProject = await Promise.all(
+        projects.map((p) =>
+          request<Task[]>(`/projects/${p.id}/tasks`).then((tasks) =>
+            tasks.map((t) => ({ ...t, project_name: p.name })),
+          ),
         ),
-      ),
-    );
-    return perProject.flat();
-  },
+      );
+      return perProject.flat();
+    }),
   createTask: (projectId: string, payload: Partial<Task>) =>
-    request<Task>(`/projects/${projectId}/tasks`, { method: "POST", body: payload }),
+    request<Task>(`/projects/${projectId}/tasks`, { method: "POST", body: payload }).then((t) => {
+      invalidateCached("allTasks");
+      return t;
+    }),
   updateTask: (id: string, payload: Partial<Task>) =>
-    request<Task>(`/tasks/${id}`, { method: "PATCH", body: payload }),
-  deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
+    request<Task>(`/tasks/${id}`, { method: "PATCH", body: payload }).then((t) => {
+      invalidateCached("allTasks");
+      return t;
+    }),
+  deleteTask: (id: string) =>
+    request<void>(`/tasks/${id}`, { method: "DELETE" }).then(() => {
+      invalidateCached("allTasks");
+    }),
   addDependency: (taskId: string, dependsOnTaskId: string) =>
-    request<void>(`/tasks/${taskId}/dependencies`, { method: "POST", body: { depends_on_task_id: dependsOnTaskId } }),
+    request<void>(`/tasks/${taskId}/dependencies`, { method: "POST", body: { depends_on_task_id: dependsOnTaskId } }).then(() => {
+      invalidateCached("allTasks");
+    }),
   removeDependency: (taskId: string, dependsOnTaskId: string) =>
-    request<void>(`/tasks/${taskId}/dependencies`, { method: "DELETE", body: { depends_on_task_id: dependsOnTaskId } }),
+    request<void>(`/tasks/${taskId}/dependencies`, { method: "DELETE", body: { depends_on_task_id: dependsOnTaskId } }).then(() => {
+      invalidateCached("allTasks");
+    }),
   suggestAssignees: (taskId: string) =>
     request<AssigneeCandidate[]>(`/tasks/${taskId}/suggest-assignees`, { method: "POST" }),
 
@@ -301,36 +372,59 @@ export const api = {
   deleteMilestone: (id: string) => request<void>(`/milestones/${id}`, { method: "DELETE" }),
 
   // Resources
-  resources: () => request<Resource[]>("/resources"),
+  resources: () => cached("resources", () => request<Resource[]>("/resources")),
   resourceMatrix: () => request<ResourceMatrixRow[]>("/resources/matrix"),
-  createResource: (payload: Partial<Resource>) => request<Resource>("/resources", { method: "POST", body: payload }),
+  createResource: (payload: Partial<Resource>) =>
+    request<Resource>("/resources", { method: "POST", body: payload }).then((r) => {
+      invalidateCached("resources");
+      return r;
+    }),
   updateResource: (id: string, payload: Partial<Resource>) =>
-    request<Resource>(`/resources/${id}`, { method: "PATCH", body: payload }),
-  deleteResource: (id: string) => request<void>(`/resources/${id}`, { method: "DELETE" }),
+    request<Resource>(`/resources/${id}`, { method: "PATCH", body: payload }).then((r) => {
+      invalidateCached("resources");
+      return r;
+    }),
+  deleteResource: (id: string) =>
+    request<void>(`/resources/${id}`, { method: "DELETE" }).then(() => {
+      invalidateCached("resources");
+    }),
   balanceSuggestions: () => request<BalanceSuggestion[]>("/resources/balance-suggestions", { method: "POST" }),
   allocations: (projectId: string) => request<ResourceAllocation[]>(`/projects/${projectId}/allocations`),
   createAllocation: (projectId: string, payload: Partial<ResourceAllocation>) =>
-    request<ResourceAllocation>(`/projects/${projectId}/allocations`, { method: "POST", body: payload }),
+    request<ResourceAllocation>(`/projects/${projectId}/allocations`, { method: "POST", body: payload }).then((a) => {
+      invalidateCached("resources");
+      return a;
+    }),
 
   // Risks
   risks: (projectId: string) => request<Risk[]>(`/projects/${projectId}/risks`),
   // Same reasoning as allTasks: no org-wide /risks endpoint is documented.
-  allRisks: async (): Promise<(Risk & { project_name?: string })[]> => {
-    const projects = await request<Project[]>("/projects");
-    const perProject = await Promise.all(
-      projects.map((p) =>
-        request<Risk[]>(`/projects/${p.id}/risks`).then((risks) =>
-          risks.map((r) => ({ ...r, project_name: p.name })),
+  allRisks: (): Promise<(Risk & { project_name?: string })[]> =>
+    cached("allRisks", async () => {
+      const projects = await request<Project[]>("/projects");
+      const perProject = await Promise.all(
+        projects.map((p) =>
+          request<Risk[]>(`/projects/${p.id}/risks`).then((risks) =>
+            risks.map((r) => ({ ...r, project_name: p.name })),
+          ),
         ),
-      ),
-    );
-    return perProject.flat();
-  },
+      );
+      return perProject.flat();
+    }),
   createRisk: (projectId: string, payload: Partial<Risk>) =>
-    request<Risk>(`/projects/${projectId}/risks`, { method: "POST", body: payload }),
+    request<Risk>(`/projects/${projectId}/risks`, { method: "POST", body: payload }).then((r) => {
+      invalidateCached("allRisks");
+      return r;
+    }),
   updateRisk: (id: string, payload: Partial<Risk>) =>
-    request<Risk>(`/risks/${id}`, { method: "PATCH", body: payload }),
-  deleteRisk: (id: string) => request<void>(`/risks/${id}`, { method: "DELETE" }),
+    request<Risk>(`/risks/${id}`, { method: "PATCH", body: payload }).then((r) => {
+      invalidateCached("allRisks");
+      return r;
+    }),
+  deleteRisk: (id: string) =>
+    request<void>(`/risks/${id}`, { method: "DELETE" }).then(() => {
+      invalidateCached("allRisks");
+    }),
 
   // Budget
   budget: (projectId: string) =>

@@ -42,10 +42,15 @@ export function useDashboardStream() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [status, setStatus] = useState<StreamStatus>("connecting");
-  // Only ever written from the timer below, never synchronously from the effect body -- when
-  // `status` itself is "live"/"connecting" the render-time ternary below reads `status` directly
-  // and this stale value is simply not consulted, so it needs no matching "clear" write either.
-  const [delayedBadStatus, setDelayedBadStatus] = useState<StreamStatus>("connecting");
+  // What to show *while* a bad transition is being suppressed -- the last genuinely-good status,
+  // not a hardcoded guess. A plain `useState` default that's only ever written from the effect
+  // below would go stale after the first bad episode (e.g. showing a leftover "offline" label the
+  // instant a *second*, brand-new episode starts, before its own 45s grace period has even begun).
+  // This has to be real state, not a ref: reading a ref's `.current` during render doesn't
+  // subscribe the component to its changes, so the display would (and, before this fix, did)
+  // silently stop updating.
+  const [lastGoodStatus, setLastGoodStatus] = useState<StreamStatus>("connecting");
+  const [showBadStatus, setShowBadStatus] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
   const dataRef = useRef<DashboardSummary | null>(null);
@@ -53,14 +58,23 @@ export function useDashboardStream() {
     dataRef.current = data;
   }, [data]);
 
-  // See RECONNECT_DISPLAY_DELAY_MS above: debounces only the "things got worse" transitions.
+  // See RECONNECT_DISPLAY_DELAY_MS above: debounces only the "things got worse" transitions, and
+  // tracks the last genuinely-good status for `displayStatus` to fall back on while suppressed.
   useEffect(() => {
-    if (status === "live" || status === "connecting") return;
-    const timer = setTimeout(() => setDelayedBadStatus(status), RECONNECT_DISPLAY_DELAY_MS);
+    // Syncing lastGoodStatus/showBadStatus off the real `status` transition, same pattern
+    // lib/auth.tsx uses for its localStorage-on-mount sync.
+    if (status === "live" || status === "connecting") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLastGoodStatus(status);
+      setShowBadStatus(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowBadStatus(true), RECONNECT_DISPLAY_DELAY_MS);
     return () => clearTimeout(timer);
   }, [status]);
 
-  const displayStatus = status === "live" || status === "connecting" ? status : delayedBadStatus;
+  const isGood = status === "live" || status === "connecting";
+  const displayStatus = isGood ? status : showBadStatus ? status : lastGoodStatus;
 
   const reload = useCallback(() => {
     setLoading((prev) => (dataRef.current ? prev : true));
@@ -73,6 +87,12 @@ export function useDashboardStream() {
     let cancelled = false;
     let es: EventSource | null = null;
     let pollId: ReturnType<typeof setTimeout> | null = null;
+    // Guards re-entry into startPolling synchronously, unlike `pollId` (which is only assigned
+    // once the *first* fetch resolves, inside `.finally()` below). Without this, a burst of rapid
+    // `onerror` events -- exactly what a dead connection being retried repeatedly produces -- can
+    // each see `pollId` still null and spawn their own independent tick() loop before the first
+    // one ever gets the chance to set it, compounding into runaway concurrent polling.
+    let pollActive = false;
     let everConnected = false;
 
     function applyData(d: DashboardSummary) {
@@ -93,7 +113,8 @@ export function useDashboardStream() {
     }
 
     function startPolling() {
-      if (pollId) return;
+      if (pollActive) return;
+      pollActive = true;
       let failureStreak = 0;
       const tick = () => {
         api
@@ -140,6 +161,14 @@ export function useDashboardStream() {
 
     es.onopen = () => {
       everConnected = true;
+      // The stream is authoritative again -- stop the HTTP safety net below rather than running
+      // both transports forever. `startPolling` guards its own re-entry, so this only matters on
+      // a genuine recovery (fires again after `onerror`'s polling branch kicked in below).
+      if (pollId) {
+        clearTimeout(pollId);
+        pollId = null;
+      }
+      pollActive = false;
       if (!cancelled) setStatus("live");
     };
 
@@ -164,8 +193,13 @@ export function useDashboardStream() {
         return;
       }
       // Had a working connection before; the browser retries the same EventSource automatically
-      // unless it has fully closed.
+      // (at its own fixed interval, not this hook's backoff) unless it has fully closed. Either
+      // way, start the same HTTP polling safety net used for a stream that never opened at all --
+      // relying solely on the browser's own retry left the dashboard with stale data for however
+      // long that takes, silently, which is a worse failure mode than a slightly-stale poll tick.
+      // `onopen` above tears this back down the moment the stream is live again.
       setStatus(es && es.readyState === EventSource.CLOSED ? "offline" : "reconnecting");
+      startPolling();
     };
 
     return () => {
